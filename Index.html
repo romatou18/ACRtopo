@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACR team - topo finder</ttitle
+    <title>NZ Field Mapper</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 p-4 font-sans text-gray-100">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
-        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR team - topo finder</h1>
+        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR team topo finder</h1>
         <p class="text-xs text-slate-400 mb-6">Input: -42.9, 171.5 OR 42°54'S, 171°35'E</p>
         
         <textarea id="combinedInput" rows="2" placeholder="Paste Coordinates here..." 
@@ -17,7 +17,7 @@
         
         <div class="grid grid-cols-4 gap-2 mb-4">
             <button onclick="processCoordinates()" class="col-span-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
-                Generate topo report            
+                Generate Map & Report
             </button>
             <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
                 Clear
@@ -97,7 +97,7 @@
                 const latFix = lat.toFixed(6);
                 const lngFix = lng.toFixed(6);
 
-                const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latFix},${lngFix}&z=15`;
+                const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latFix},${lngFix}&z=15&pin=1`;
                 const googleUrl = `https://www.google.com/maps?q=${latFix},${lngFix}`;
 
                 const report = `LOCATION REPORT\n----------------------\nDECIMAL: ${latFix}, ${lngFix}\nDMS:     ${toDMS(lat, true)}, ${toDMS(lng, false)}\n\nNZ TOPO: ${topoUrl}\nGOOGLE:  ${googleUrl}`;
@@ -130,4 +130,4 @@
         }
     </script>
 </body>
-    </html>
+                    </html>

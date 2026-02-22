@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACR team - topo finder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 p-4 font-sans text-gray-100">
+
+    <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
+        <h1 class="text-2xl font-bold mb-1 text-emerald-400">NZ Smart Mapper</h1>
+        <p class="text-xs text-slate-400 mb-6">Paste any format: Decimal, DMS, or Grid.</p>
+        
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-slate-300 mb-2">Coordinates (Lat, Long)</label>
+            <textarea id="combinedInput" rows="2" placeholder="e.g. 42°54'S 171°35'E  OR  -42.9, 171.5" 
+               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white placeholder-slate-500"></textarea>
+        </div>
+        
+        <button onclick="processCoordinates()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+            Generate Map Links
+        </button>
+
+        <div id="resultArea" class="mt-8 hidden space-y-4">
+            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600">
+                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Detected Decimal</span>
+                <p id="decimalDisplay" class="text-lg font-mono text-emerald-300 mt-1"></p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-4 rounded-xl font-bold text-sm transition">
+                    NZ Topo Map ↗
+                </a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-4 rounded-xl font-bold text-sm transition">
+                    Google Maps ↗
+                </a>
+            </div>
+            
+            <div class="relative overflow-hidden rounded-xl border border-slate-600 bg-slate-800" style="height: 300px;">
+                <iframe id="mapFrame" class="w-full h-full border-0" src=""></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function parseDMS(input) {
+            if (!input) return null;
+            // Extract numbers including decimals
+            const parts = input.match(/[-+]?\d*\.?\d+/g);
+            if (!parts) return null;
+
+            let degrees = parseFloat(parts[0]) || 0;
+            let minutes = parseFloat(parts[1]) || 0;
+            let seconds = parseFloat(parts[2]) || 0;
+
+            let decimal = Math.abs(degrees) + (minutes / 60) + (seconds / 3600);
+            
+            // Check for South/West indicators or negative degree sign
+            if (/[SWsw]/.test(input) || degrees < 0) {
+                decimal = -decimal;
+            }
+            return decimal.toFixed(6);
+        }
+
+        function processCoordinates() {
+            const fullInput = document.getElementById('combinedInput').value.trim();
+            const resultArea = document.getElementById('resultArea');
+            
+            // Split by comma, semicolon, or line break
+            const segments = fullInput.split(/[,;\n]/);
+            
+            if (segments.length < 2) {
+                // If no clear separator, try to split by space between coordinates
+                // This is tricky with DMS, so we look for 'S' or 'E' as anchors
+                alert("Please separate Latitude and Longitude with a comma.");
+                return;
+            }
+
+            const lat = parseDMS(segments[0]);
+            const lng = parseDMS(segments[1]);
+
+            if (isNaN(lat) || isNaN(lng)) {
+                alert("Could not parse coordinates. Try: -42.9, 171.5");
+                return;
+            }
+
+            const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${lat},${lng}&z=15`;
+            const googleUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+
+            document.getElementById('decimalDisplay').innerText = `${lat}, ${lng}`;
+            document.getElementById('topoLink').href = topoUrl;
+            document.getElementById('googleLink').href = googleUrl;
+            document.getElementById('mapFrame').src = topoUrl; // Preview default to NZ Topo
+            
+            resultArea.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

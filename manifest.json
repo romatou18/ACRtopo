@@ -6,6 +6,7 @@
   "background_color": "#ffffff",
   "theme_color": "#007bff",
   "description": "Team management and coordination for ACR.",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "https://acr-topo.netlify.app/Acrlogo.png",
@@ -14,8 +15,16 @@
     },
     {
       "src": "https://acr-topo.netlify.app/Acrlogo.png",
-      "sizes": "512x512",
+      "sizes": "317x319",
       "type": "image/png"
+    }
+  ],
+  "screenshots" : [
+    {
+      "src": "https://acr-topo.netlify.app/imgs/acr-screenshot1.png",
+      "sizes": "492x406",
+      "type": "image/png",
+      "platform": "wide"
     }
   ]
 }

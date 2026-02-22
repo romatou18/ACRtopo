@@ -9,32 +9,105 @@
 <body class="bg-slate-900 p-4 font-sans text-gray-100">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
-        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR topo finder</h1>
-        <p class="text-xs text-slate-400 mb-6">Paste any format: Decimal, DMS, or Grid.</p>
+        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR team - topo finder</h1>
+        <p class="text-xs text-slate-400 mb-6">Input: -42.9, 171.5 OR 42°54'S, 171°35'E</p>
         
-        <div class="mb-4">
-            <label class="block text-sm font-medium text-slate-300 mb-2">Coordinates (Lat, Long)</label>
-            <textarea id="combinedInput" rows="2" placeholder="e.g. 42°54'S 171°35'E  OR  -42.9, 171.5" 
-               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white placeholder-slate-500"></textarea>
-        </div>
+        <textarea id="combinedInput" rows="2" placeholder="Paste Coordinates here..." 
+               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4"></textarea>
         
         <button onclick="processCoordinates()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
-            Generate Map Links
+            Generate Map & Report
         </button>
 
         <div id="resultArea" class="mt-8 hidden space-y-4">
-            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600">
-                <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Detected Decimal</span>
-                <p id="decimalDisplay" class="text-lg font-mono text-emerald-300 mt-1"></p>
+            <div class="grid grid-cols-2 gap-3">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 p-3 rounded-lg font-bold text-sm">NZ Topo ↗</a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 p-3 rounded-lg font-bold text-sm">Google ↗</a>
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
-                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-4 rounded-xl font-bold text-sm transition">
-                    NZ Topo Map ↗
-                </a>
-                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-4 rounded-xl font-bold text-sm transition">
-                    Google Maps ↗
-                </a>
+            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600 relative">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Location Report</span>
+                <pre id="reportContent" class="text-sm font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
+                
+                <button onclick="copyToClipboard()" class="mt-4 w-full bg-slate-600 hover:bg-slate-500 text-white text-xs font-bold py-2 rounded-lg transition">
+                    Click to Copy Report
+                </button>
+            </div>
+            
+            <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
+        </div>
+    </div>
+
+    <script>
+        function toDMS(decimal, isLat) {
+            const absolute = Math.abs(decimal);
+            const degrees = Math.floor(absolute);
+            const minutesNotTruncated = (absolute - degrees) * 60;
+            const minutes = Math.floor(minutesNotTruncated);
+            const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(2);
+            
+            let direction = "";
+            if (isLat) direction = decimal >= 0 ? "N" : "S";
+            else direction = decimal >= 0 ? "E" : "W";
+
+            return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+        }
+
+        function parseDMS(input) {
+            if (!input) return null;
+            const parts = input.match(/[-+]?\d*\.?\d+/g);
+            if (!parts) return null;
+
+            let d = parseFloat(parts[0]) || 0;
+            let m = parseFloat(parts[1]) || 0;
+            let s = parseFloat(parts[2]) || 0;
+
+            let decimal = Math.abs(d) + (m / 60) + (s / 3600);
+            if (/[SWsw]/.test(input) || d < 0) decimal = -decimal;
+            return decimal;
+        }
+
+        function processCoordinates() {
+            const fullInput = document.getElementById('combinedInput').value.trim();
+            const segments = fullInput.split(/[,;\n]/);
+            
+            if (segments.length < 2) {
+                alert("Please separate Lat and Long with a comma.");
+                return;
+            }
+
+            const lat = parseDMS(segments[0]);
+            const lng = parseDMS(segments[1]);
+
+            const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${lat.toFixed(6)},${lng.toFixed(6)}&z=15`;
+            const googleUrl = `https://www.google.com/maps?q=${lat.toFixed(6)},${lng.toFixed(6)}`;
+
+            // Build Report String
+            const report = 
+`LOCATION REPORT
+----------------------
+DECIMAL: ${lat.toFixed(6)}, ${lng.toFixed(6)}
+DMS:     ${toDMS(lat, true)}, ${toDMS(lng, false)}
+
+NZ TOPO: ${topoUrl}
+GOOGLE:  ${googleUrl}`;
+
+            document.getElementById('reportContent').innerText = report;
+            document.getElementById('topoLink').href = topoUrl;
+            document.getElementById('googleLink').href = googleUrl;
+            document.getElementById('mapFrame').src = topoUrl;
+            document.getElementById('resultArea').classList.remove('hidden');
+        }
+
+        function copyToClipboard() {
+            const text = document.getElementById('reportContent').innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert("Report copied to clipboard!");
+            });
+        }
+    </script>
+</body>
+</html>                </a>
             </div>
             
             <div class="relative overflow-hidden rounded-xl border border-slate-600 bg-slate-800" style="height: 300px;">

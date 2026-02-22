@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ARC Team Topo Finder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 p-4 font-sans text-gray-100">
+
+    <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 text-center">
+        <img src="Acrlogo.png" alt="ARC Logo" class="w-12 h-12 mb-4 mx-auto">
+        
+        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
+        <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
+        
+        <textarea id="combinedInput" rows="2" placeholder="Paste Coordinates here..." 
+               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4 text-left"></textarea>
+        
+        <div class="grid grid-cols-4 gap-2 mb-4">
+            <button onclick="processCoordinates()" class="col-span-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                Generate Map & Report
+            </button>
+            <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
+                Clear
+            </button>
+        </div>
+
+        <div id="resultArea" class="mt-8 hidden space-y-4 text-left">
+            <div class="grid grid-cols-3 gap-2">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] transition">NZ TOPO</a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] transition">Google maps</a>
+                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] transition">Google EARTH</a>
+            </div>
+
+            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600 relative">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ARC Location Report</span>
+                <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
+                
+                <button onclick="copyToClipboard()" class="mt-4 w-full bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold py-2 rounded-lg transition">
+                    Click to Copy Report
+                </button>
+            </div>
+            
+            <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
+        </div>
+    </div>
+
+    <script>
+        function toDMS(decimal, isLat) {
+            const absolute = Math.abs(decimal);
+            const degrees = Math.floor(absolute);
+            const minutesFull = (absolute - degrees) * 60;
+            const minutes = Math.floor(minutesFull);
+            const seconds = ((minutesFull - minutes) * 60).toFixed(2);
+            
+            let direction = isLat ? (decimal >= 0 ? "N" : "S") : (decimal >= 0 ? "E" : "W");
+            return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+        }
+
+        function parseToDecimal(input) {
+            if (!input) return null;
+            const parts = input.match(/[-+]?\d*\.?\d+/g);
+            if (!parts || parts.length === 0) return null;
+            let d = parseFloat(parts[0]) || 0;
+            let m = parseFloat(parts[1]) || 0;
+            let s = parseFloat(parts[2]) || 0;
+            let decimal = Math.abs(d) + (m / 60) + (s / 3600);
+            if (/[SWsw]/.test(input) || d < 0) decimal = -Math.abs(decimal);
+            return decimal;
+        }
+
+        function processCoordinates() {
+            try {
+                const fullInput = document.getElementById('combinedInput').value.trim();
+                const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
+                if (segments.length < 2) { alert("Use a comma or new line to separate Lat/Long."); return; }
+
+                const lat = parseToDecimal(segments[0]);
+                const lng = parseToDecimal(segments[1]);
+                if (lat === null || lng === null) { alert("Could not interpret coordinates."); return; }
+
+                const latF = lat.toFixed(6);
+                const lngF = lng.toFixed(6);
+
+                const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
+                const googleUrl = `https://www.google.com/maps?q=${latF},${lngF}`;
+                const earthUrl = `https://earth.google.com/web/@${latF},${lngF},500a,35000d,35y,0h,0t,0r`;
+
+                const report = `ARC LOCATION REPORT\n----------------------\nDECIMAL: ${latF}, ${lngF}\nDMS:     ${toDMS(lat, true)}, ${toDMS(lng, false)}\n\nNZ TOPO: ${topoUrl}\nGoogle Maps:  ${googleUrl}\nGoogle EARTH:   ${earthUrl}`;
+
+                document.getElementById('reportContent').innerText = report;
+                document.getElementById('topoLink').href = topoUrl;
+                document.getElementById('googleLink').href = googleUrl;
+                document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('mapFrame').src = topoUrl;
+                document.getElementById('resultArea').classList.remove('hidden');
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        }
+
+        function clearAll() {
+            document.getElementById('combinedInput').value = "";
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('mapFrame').src = "";
+        }
+
+        async function copyToClipboard() {
+            const text = document.getElementById('reportContent').innerText;
+            try {
+                await navigator.clipboard.writeText(text);
+                alert("ARC Report copied!");
+            } catch (err) {
+                alert("Manual copy required.");
+            }
+        }
+    </script>
+</body>
+</html>

@@ -8,12 +8,12 @@
   "description": "Team management and coordination for ACR.",
   "icons": [
     {
-      "src": "https://acr-topo.netlify.app/icon-192.png",
+      "src": "https://acr-topo.netlify.app/Acrlogo.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://acr-topo.netlify.app/icon-512.png",
+      "src": "https://acr-topo.netlify.app/Acrlogo.png",
       "sizes": "512x512",
       "type": "image/png"
     }

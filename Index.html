@@ -9,7 +9,7 @@
 <body class="bg-slate-900 p-4 font-sans text-gray-100">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
-        <h1 class="text-2xl font-bold mb-1 text-emerald-400">NZ Smart Mapper</h1>
+        <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR topo finder</h1>
         <p class="text-xs text-slate-400 mb-6">Paste any format: Decimal, DMS, or Grid.</p>
         
         <div class="mb-4">
@@ -85,7 +85,7 @@
                 return;
             }
 
-            const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${lat},${lng}&z=15`;
+            const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${lat},${lng}&z=15&pin=1`;
             const googleUrl = `https://www.google.com/maps?q=${lat},${lng}`;
 
             document.getElementById('decimalDisplay').innerText = `${lat}, ${lng}`;

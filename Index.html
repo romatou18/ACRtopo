@@ -36,6 +36,12 @@
             </button>
         </div>
 
+        <div class="mt-8 pt-4 border-t border-slate-700 text-center">
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
+                <span id="visitCount" class="text-emerald-500">...</span> hits.
+            </p>
+        </div>
+
         <div id="resultArea" class="mt-8 hidden space-y-4">
             <div class="grid grid-cols-3 gap-2">
                 <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ TOPO</a>
@@ -61,11 +67,6 @@
             </div>
             
             <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
-            <div id="secretFooter" class="mt-8 pt-4 border-t border-slate-700 text-center hidden">
-                <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-                    Usage: <span id="visitCount" class="text-emerald-500">...</span> hits.
-                </p>
-            </div>
         </div>
        
     </div>

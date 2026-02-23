@@ -61,12 +61,13 @@
             </div>
             
             <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
+            <div id="secretFooter" class="mt-8 pt-4 border-t border-slate-700 text-center hidden">
+                <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
+                    Usage: <span id="visitCount" class="text-emerald-500">...</span> hits.
+                </p>
+            </div>
         </div>
-        <div id="secretFooter" class="mt-8 pt-4 border-t border-slate-700 text-center hidden">
-            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-                Usage: <span id="visitCount" class="text-emerald-500">...</span> deployments
-            </p>
-        </div>
+       
     </div>
 
     <script>
@@ -219,7 +220,7 @@
                 const report = `ARC LOCATION Alti+Topo+Wx
 ----------------------
 GENERATED: ${timeStr}
---ALTITUDE(AMSL): ${altitude}m ${vectorText}
+--ALTITUDE(AMSL): ${altitude} ${vectorText}
 --COORDS: ${latF}, ${lngF}
     DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
 --------TOPO-------------------

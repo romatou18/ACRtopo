@@ -3,75 +3,280 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NZ Topo - DMS & Decimal</title>
+    <title>ARC Team Topo Finder</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        .map-container { position: relative; padding-bottom: 75%; height: 0; overflow: hidden; }
-        .map-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
-    </style>
+    <link rel="manifest" href="/manifest.json">
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+    }
+    </script>
 </head>
-<body class="bg-slate-100 p-5 font-sans">
+<body class="bg-slate-900 p-4 font-sans text-gray-100">
 
-    <div class="max-w-md mx-auto bg-white p-6 rounded-xl shadow-lg">
-        <h1 class="text-2xl font-bold mb-2 text-emerald-700">NZ Topo Finder</h1>
-        <p class="text-xs text-gray-500 mb-4">Supports Decimal (-42.9) or DMS (42° 54' S)</p>
+    <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
+        <div class="text-center">
+            <img src="Acrlogo.png" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto">
+            <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
+            <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
+        </div>
         
-        <label class="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-        <input type="text" id="latInput" placeholder="e.g. 42 54 01 S or -42.900" 
-               class="w-full p-3 border rounded-lg mb-3 focus:ring-2 focus:ring-emerald-500 outline-none">
-
-        <label class="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
-        <input type="text" id="lngInput" placeholder="e.g. 171 35 34 E or 171.592" 
-               class="w-full p-3 border rounded-lg mb-4 focus:ring-2 focus:ring-emerald-500 outline-none">
+        <textarea id="combinedInput" rows="2" placeholder="Paste Lat, Long here (DDD -43.52, DMS S43°03'07.200, DDM S43°03.120') ..." 
+               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4"></textarea>
         
-        <button onclick="processCoords()" class="w-full bg-emerald-600 text-white font-bold py-3 rounded-lg hover:bg-emerald-700 transition">
-            Generate Map Link
-        </button>
+        <div class="grid grid-cols-4 gap-2 mb-4">
+            <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                Generate Report
+            </button>
+            <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
+                📍
+            </button>
+            <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
+                Clear
+            </button>
+        </div>
 
-        <div id="resultArea" class="mt-6 hidden">
-            <div class="bg-emerald-50 p-3 rounded mb-4 border border-emerald-100">
-                <p class="text-xs font-bold text-emerald-800 uppercase">Parsed Decimal:</p>
-                <p id="decimalDisplay" class="text-sm text-emerald-900 font-mono"></p>
+        <div id="resultArea" class="mt-8 hidden space-y-4">
+            <div class="grid grid-cols-3 gap-2">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ TOPO</a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] text-center">G Maps</a>
+                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] text-center">G Earth</a>
+                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Live Wx RADAR</a>
+                <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Windy.com SPOT</a>
+                <a id="yrNoLink" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-3 rounded-lg font-bold text-[10px] text-center">Yr.no 5days</a>
+            </div>
+
+            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ARC Location Report</span>
+                <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
+                
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold py-3 rounded-lg transition">
+                        📋 Copy Text
+                    </button>
+                    <button onclick="shareReport()" class="bg-blue-700/20 hover:bg-blue-700/40 text-blue-400 border border-blue-500/30 text-xs font-bold py-3 rounded-lg transition">
+                        📤 Share...
+                    </button>
+                </div>
             </div>
             
-            <a id="topoLink" href="#" target="_blank" class="text-blue-600 break-all underline text-sm block mb-4 italic">Open in Full Screen →</a>
-            
-            <div class="map-container rounded-lg border shadow-inner bg-gray-200">
-                <iframe id="mapFrame" src=""></iframe>
-            </div>
+            <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
         </div>
     </div>
 
     <script>
-        function dmsToDecimal(dmsStr) {
-            if (!dmsStr) return null;
-            
-            // Check if it's already a simple decimal number
-            if (!isNaN(dmsStr) && dmsStr.trim() !== "") return parseFloat(dmsStr);
+        // Store coordinates globally for vector comparisons
+        let targetLat = null, targetLng = null;
+        let myLat = null, myLng = null;
 
-            // Regex to find numbers for Degrees, Minutes, Seconds
-            const parts = dmsStr.match(/(\d+(\.\d+)?)/g);
-            if (!parts) return parseFloat(dmsStr); // Fallback
-
-            let degrees = parseFloat(parts[0]) || 0;
-            let minutes = parseFloat(parts[1]) || 0;
-            let seconds = parseFloat(parts[2]) || 0;
-
-            let decimal = degrees + (minutes / 60) + (seconds / 3600);
-
-            // Handle South or West hemispheres
-            if (/[SWsw]/.test(dmsStr) || parseFloat(parts[0]) < 0) {
-                decimal = -Math.abs(decimal);
-            }
-
-            return decimal.toFixed(6);
+        /**
+         * Generates local NZ Timestamp
+         */
+        function getNZTimestamp() {
+            return new Date().toLocaleString('en-NZ', { 
+                day: '2-digit', month: 'short', year: 'numeric', 
+                hour: '2-digit', minute: '2-digit', hour12: false,
+                timeZoneName: 'short' 
+            });
         }
 
-        function processCoords() {
-            const rawLat = document.getElementById('latInput').value;
-            const rawLng = document.getElementById('lngInput').value;
+        /**
+         * Converts decimal degrees into DMS (Degrees, Minutes, Seconds)
+         */
+        function toDMS(decimal, isLat) {
+            const absolute = Math.abs(decimal);
+            const degrees = Math.floor(absolute);
+            const minutesFull = (absolute - degrees) * 60;
+            const minutes = Math.floor(minutesFull);
+            const seconds = ((minutesFull - minutes) * 60).toFixed(2);
+            let direction = isLat ? (decimal >= 0 ? "N" : "S") : (decimal >= 0 ? "E" : "W");
+            return `${degrees}°${minutes}'${seconds}"${direction}`;
+        }
 
-            const lat = dmsToDecimal(rawLat);
-            const lng = dmsToDecimal(rawLng);
+        /**
+         * Parses coordinate input (DDD, DDM, or DMS)
+         */
+        function parseToDecimal(input) {
+            if (!input) return null;
+            const isNegative = /[SWsw-]/.test(input);
+            const parts = input.match(/\d+(\.\d+)?/g);
+            if (!parts) return null;
 
-            if (isNaN(lat) || isNaN(lng))
+            const p = parts.map(Number);
+            let decimal = 0;
+
+            if (p.length === 1) decimal = p[0];
+            else if (p.length === 2) decimal = p[0] + (p[1] / 60);
+            else if (p.length >= 3) decimal = p[0] + (p[1] / 60) + (p[2] / 3600);
+
+            return isNegative ? -Math.abs(decimal) : Math.abs(decimal);
+        }
+
+        /**
+         * Fetches Altitude from Open-Meteo DEM
+         */
+        async function getElevation(lat, lng) {
+            try {
+                const response = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`);
+                const data = await response.json();
+                return data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Altitude unknown";
+            } catch (err) { return "Elevation fetch failed"; }
+        }
+
+        /**
+         * Calculates Distance and Compass Bearing
+         */
+        function getVector(lat1, lon1, lat2, lon2) {
+            const R = 6371; // km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const distance = R * c;
+
+            const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+            const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                      Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+            let bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+
+            return { dist: distance.toFixed(2), brng: Math.round(bearing) };
+        }
+
+        /**
+         * Main orchestration function
+         */
+        async function processCoordinates() {
+            const btn = document.getElementById('genBtn');
+            try {
+                btn.innerText = "Processing...";
+                const fullInput = document.getElementById('combinedInput').value.trim();
+                const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
+                
+                if (segments.length < 2) { 
+                    alert("Please provide both Lat and Long."); 
+                    btn.innerText = "Generate Report"; 
+                    return; 
+                }
+
+                targetLat = parseToDecimal(segments[0]);
+                targetLng = parseToDecimal(segments[1]);
+
+                if (targetLat === null || targetLng === null) { 
+                    alert("Format not recognized."); 
+                    btn.innerText = "Generate Report"; 
+                    return; 
+                }
+
+                const latF = targetLat.toFixed(6), lngF = targetLng.toFixed(6);
+                const altitude = await getElevation(targetLat, targetLng);
+                const timeStr = getNZTimestamp();
+
+                // Generate URLs
+                const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
+                const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${latF},${lngF}&travelmode=walking`;
+                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},1000a,3500d,35y,0h,0t,0r`;
+                const windyUrl = `https://www.windy.com/${latF}/${lngF}?${latF},${lngF},12`;
+                const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z/place=${latF},${lngF}`;
+                const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
+
+                let vectorText = "";
+                if (myLat && myLng) {
+                    const vec = getVector(myLat, myLng, targetLat, targetLng);
+                    vectorText = `\nVECTOR:   ${vec.dist}km @ ${vec.brng}° (from your position)`;
+                }
+
+                // Format the Report exactly as requested
+                const report = `ARC LOCATION Alti+Topo+Wx
+----------------------
+GENERATED: ${timeStr}
+---ALTITUDE(m): ${altitude}${vectorText}
+
+---COORDS: ${latF}, ${lngF}
+    DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
+
+---NZ TOPO:
+    ${topoUrl}
+
+---GMaps:
+    ${googleUrl}
+
+---Google Earth:
+    ${earthUrl}
+
+---Live Wx Radar:
+    ${zoomEarth}
+
+---Windy.com:
+    ${windyUrl}
+
+---Yr.no 5days:
+    ${yrNoUrl}`;
+
+                // Update UI
+                document.getElementById('reportContent').innerText = report;
+                document.getElementById('topoLink').href = topoUrl;
+                document.getElementById('googleLink').href = googleUrl;
+                document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('zoomEarthLink').href = zoomEarth;
+                document.getElementById('windyLink').href = windyUrl;
+                document.getElementById('yrNoLink').href = yrNoUrl;
+                document.getElementById('mapFrame').src = topoUrl;
+                
+                document.getElementById('resultArea').classList.remove('hidden');
+                btn.innerText = "Generate Report";
+            } catch (err) { 
+                alert("Error: " + err.message); 
+                btn.innerText = "Generate Report";
+            }
+        }
+
+        /**
+         * Native Sharing Feature
+         */
+        async function shareReport() {
+            const reportText = document.getElementById('reportContent').innerText;
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'ARC Team Rescue Report',
+                        text: reportText
+                    });
+                } catch (err) { console.log("Share cancelled"); }
+            } else {
+                alert("Sharing not supported on this browser. Please use Copy button.");
+            }
+        }
+
+        /**
+         * GPS Capture
+         */
+        function getCurrentLocation() {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition((pos) => {
+                myLat = pos.coords.latitude;
+                myLng = pos.coords.longitude;
+                const input = document.getElementById('combinedInput');
+                if (!input.value.trim()) {
+                    input.value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;
+                }
+                processCoordinates();
+            }, (err) => alert("GPS error: " + err.message), {enableHighAccuracy: true});
+        }
+
+        function clearAll() {
+            document.getElementById('combinedInput').value = "";
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('mapFrame').src = "";
+            targetLat = null; targetLng = null;
+        }
+
+        async function copyToClipboard() {
+            const text = document.getElementById('reportContent').innerText;
+            await navigator.clipboard.writeText(text);
+            alert("Report copied!");
+        }
+    </script>
+</body>
+</html>

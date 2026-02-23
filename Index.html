@@ -62,9 +62,37 @@
             
             <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
         </div>
+        <div id="secretFooter" class="mt-8 pt-4 border-t border-slate-700 text-center hidden">
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
+                Usage: <span id="visitCount" class="text-emerald-500">...</span> deployments
+            </p>
+        </div>
     </div>
 
     <script>
+        // --- STEALTH COUNTER LOGIC ---
+        let clickCount = 0;
+        
+        async function updateCounter() {
+            try {
+                // Using CounterAPI.dev (current 2026 standard)
+                const response = await fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/update');
+                const data = await response.json();
+                document.getElementById('visitCount').innerText = data.count;
+            } catch (err) {
+                document.getElementById('visitCount').innerText = "ERR";
+            }
+        }
+
+        function handleLogoClick() {
+            clickCount++;
+            if (clickCount === 3) {
+                document.getElementById('secretFooter').classList.remove('hidden');
+                updateCounter();
+            }
+            // Reset click count after 2 seconds of inactivity
+            setTimeout(() => { clickCount = 0; }, 2000);
+        }
         // Store coordinates globally for vector comparisons
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
@@ -191,7 +219,7 @@
                 const report = `ARC LOCATION Alti+Topo+Wx
 ----------------------
 GENERATED: ${timeStr}
---ALTITUDE(m): ${altitude}${vectorText}
+--ALTITUDE(AMSL): ${altitude}m ${vectorText}
 --COORDS: ${latF}, ${lngF}
     DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
 --------TOPO-------------------

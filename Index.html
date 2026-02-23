@@ -12,7 +12,7 @@
     }
     </script>
 </head>
-<body class="bg-slate-900 p-4 font-sans text-gray-100">
+<body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS()">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
         <div class="text-center">
@@ -43,8 +43,9 @@
         </div>
 
         <div id="resultArea" class="mt-8 hidden space-y-4">
-            <div class="grid grid-cols-3 gap-2">
-                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ TOPO</a>
+            <div class="grid grid-cols-4 gap-2">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ TOPO (web)</a>
+                <a id="topoAppLink" target="_blank" class="flex items-center justify-center bg-emerald-700 hover:bg-emerald-600 p-3 rounded-lg font-bold text-[10px] text-center border border-emerald-400/50">NZ TOPO (mobile)</a>
                 <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] text-center">G Maps</a>
                 <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] text-center">G Earth</a>
                 <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Live Wx RADAR</a>
@@ -94,12 +95,23 @@
             setTimeout(() => { clickCount = 0; }, 2000);
         }
         // Store coordinates globally for vector comparisons
+        
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
 
         /**
          * Generates local NZ Timestamp
+         * Auto-prompt GPS on page load
          */
+        function initGPS() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    myLat = pos.coords.latitude;
+                    myLng = pos.coords.longitude;
+                }, (err) => console.log("GPS prompt declined"), {enableHighAccuracy: true});
+            }
+        }
+
         function getNZTimestamp() {
             return new Date().toLocaleString('en-NZ', { 
                 day: '2-digit', month: 'short', year: 'numeric', 
@@ -189,17 +201,14 @@
             try {
                 btn.innerText = "Processing...";
                 
-                // NEW: If GPS is missing, try to get it first
+                // Final GPS check
                 if (myLat === null || myLng === null) {
-                    await new Promise((resolve, reject) => {
+                    await new Promise((resolve) => {
                         navigator.geolocation.getCurrentPosition((pos) => {
                             myLat = pos.coords.latitude;
                             myLng = pos.coords.longitude;
                             resolve();
-                        }, (err) => {
-                            console.log("GPS prompt declined or failed");
-                            resolve(); // Continue anyway even if GPS fails
-                        }, {enableHighAccuracy: true, timeout: 5000});
+                        }, () => resolve(), {enableHighAccuracy: true, timeout: 3000});
                     });
                 }
 
@@ -227,16 +236,17 @@
 
                 // Generate URLs
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
+                const topoAppUrl = `topo50map://map?lat=${latF}&lon=${lngF}`;
                 const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
-                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},1000a,3500d,35y,0h,0t,0r`;
-                const windyUrl = `https://www.windy.com/${latF}/${lngF}?${latF},${lngF},12`;
-                const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z/place=${latF},${lngF}`;
+                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
+                const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
+                const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
                 const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
 
                 let vectorText = "";
                 if (myLat !== null && myLng !== null) {
                     const vec = getVector(myLat, myLng, targetLat, targetLng);
-                    vectorText = `\n--VECTOR:   ${vec.dist}km\n--BEARING:  ${vec.grid}° (Grid) | ${vec.mag}° (Mag 23°E offset)`;
+                    vectorText = `\n--VECTOR:   ${vec.dist}km\n--BEARING:  ${vec.grid}° (Grid) | ${vec.mag}° (Mag 23°E Canterbury)`;
                 }
 
                 const report = `ARC LOCATION Alti+Topo+Wx
@@ -263,6 +273,7 @@ GENERATED: ${timeStr}
                 // Update UI
                 document.getElementById('reportContent').innerText = report;
                 document.getElementById('topoLink').href = topoUrl;
+                document.getElementById('topoAppLink').href = topoAppUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;
                 document.getElementById('zoomEarthLink').href = zoomEarth;

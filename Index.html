@@ -171,7 +171,7 @@
                     vectorText = `\nVECTOR:   ${vec.dist}km @ ${vec.brng}° (from your position)`;
                 }
 
-                const report = `ARC LOCATION Alti+Topo+Wx\n----------------------\n---COORDS:\n   ${latF}, ${lngF}\nDMS:    ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\n   ---ALTITUDE(m): ${altitude}${vectorText}\n\n---NZ TOPO:\n    ${topoUrl}\n\n---GMaps:\n    ${googleUrl}\n\n---Google Earth:\n    ${earthUrl}\n\n---Live Wx Radar:\n    ${zoomEarth}\n\n---Windy.com:\n    ${windyUrl}\n---Yr.no 5days:\n    ${windyUrl}`;
+                const report = `ARC LOCATION Alti+Topo+Wx\n----------------------\n---COORDS:\n   ${latF}, ${lngF}\n    DMS:${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\n---ALTITUDE(m): ${altitude}${vectorText}\n\n---NZ TOPO:\n    ${topoUrl}\n\n---GMaps:\n    ${googleUrl}\n\n---Google Earth:\n    ${earthUrl}\n\n---Live Wx Radar:\n    ${zoomEarth}\n\n---Windy.com:\n    ${windyUrl}\n---Yr.no 5days:\n    ${windyUrl}`;
 
                 // UI Updates
                 document.getElementById('reportContent').innerText = report;

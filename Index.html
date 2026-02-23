@@ -41,7 +41,7 @@
                 <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ TOPO</a>
                 <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] text-center">G Maps</a>
                 <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] text-center">G Earth</a>
-                <a id="metLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Wx RADAR</a>
+                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Wx RADAR</a>
                 <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Windy.com SPOT</a>
             </div>
 
@@ -169,22 +169,22 @@
                     vectorText = `\nVECTOR:   ${vec.dist}km @ ${vec.brng}° (from your position)`;
                 }
 
-                const report = `ARC LOCATION REPORT\n----------------------\nCOORDS:\n   ${latF}, ${lngF}\nDMS:      ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\nALTITUDE(m): ${altitude}${vectorText}\n\n\nNZ TOPO:\n  ${topoUrl}\n\nGMaps:\n   ${googleUrl}\n\nGoogle Earth:\n   ${earthUrl}\n\nRadar:\n    ${windyUrl}\n\nWindy.com:\n    ${windyUrl}`;
+                const report = `ARC LOCATION REPORT\n----------------------\nCOORDS:\n   ${latF}, ${lngF}\nDMS:      ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\n   ALTITUDE(m): ${altitude}${vectorText}\n\nNZ TOPO: ${topoUrl}\n\nGMaps: ${googleUrl}\n\nGoogle Earth: ${earthUrl}\n\nRadar: ${zoomEarth}\n\nWindy.com: ${windyUrl}`;
 
                 // UI Updates
                 document.getElementById('reportContent').innerText = report;
                 document.getElementById('topoLink').href = topoUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;
-                document.getElementById('metLink').href = zoomEarth;
+                document.getElementById('zoomEarthLink').href = zoomEarth;
                 document.getElementById('windyLink').href = windyUrl;
                 document.getElementById('mapFrame').src = topoUrl;
                 
                 document.getElementById('resultArea').classList.remove('hidden');
-                btn.innerText = "Generate";
+                btn.innerText = "Generate Report";
             } catch (err) { 
                 alert("Error: " + err.message); 
-                btn.innerText = "Generate";
+                btn.innerText = "Generate Report";
             }
         }
 

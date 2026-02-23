@@ -7,9 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="manifest" href="/manifest.json">
     <script>
-  	if ('serviceWorker' in navigator) {
-    	navigator.serviceWorker.register('/sw.js');
-  	}
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+    }
     </script>
 </head>
 <body class="bg-slate-900 p-4 font-sans text-gray-100">
@@ -28,7 +28,7 @@
             <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
                 Generate Report
             </button>
-            <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+            <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
                 My current location
             </button>
             <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
@@ -43,16 +43,21 @@
                 <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] text-center">G Earth</a>
                 <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Live Wx RADAR</a>
                 <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Windy.com SPOT</a>
-                <a id="yrNoLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Yr.no 5days</a>
+                <a id="yrNoLink" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-3 rounded-lg font-bold text-[10px] text-center">Yr.no 5days</a>
             </div>
 
             <div class="bg-slate-700 p-4 rounded-xl border border-slate-600">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ARC Location Report</span>
                 <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
                 
-                <button onclick="copyToClipboard()" class="mt-4 w-full bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold py-2 rounded-lg transition">
-                    Click to Copy Report
-                </button>
+                <div class="grid grid-cols-2 gap-2 mt-4">
+                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold py-3 rounded-lg transition">
+                        📋 Copy Text
+                    </button>
+                    <button onclick="shareReport()" class="bg-blue-700/20 hover:bg-blue-700/40 text-blue-400 border border-blue-500/30 text-xs font-bold py-3 rounded-lg transition">
+                        📤 Share...
+                    </button>
+                </div>
             </div>
             
             <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
@@ -60,12 +65,23 @@
     </div>
 
     <script>
-        // Store coordinates globally to allow comparison between user and target
+        // Store coordinates globally for vector comparisons
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
 
         /**
-         * Converts decimal degrees into human-readable DMS (Degrees, Minutes, Seconds)
+         * Generates local NZ Timestamp
+         */
+        function getNZTimestamp() {
+            return new Date().toLocaleString('en-NZ', { 
+                day: '2-digit', month: 'short', year: 'numeric', 
+                hour: '2-digit', minute: '2-digit', hour12: false,
+                timeZoneName: 'short' 
+            });
+        }
+
+        /**
+         * Converts decimal degrees into DMS (Degrees, Minutes, Seconds)
          */
         function toDMS(decimal, isLat) {
             const absolute = Math.abs(decimal);
@@ -78,7 +94,7 @@
         }
 
         /**
-         * Parses various coordinate formats (DDD, DDM, DMS) into Decimal Degrees
+         * Parses coordinate input (DDD, DDM, or DMS)
          */
         function parseToDecimal(input) {
             if (!input) return null;
@@ -89,34 +105,31 @@
             const p = parts.map(Number);
             let decimal = 0;
 
-            if (p.length === 1) decimal = p[0];                       // Decimal Degrees
-            else if (p.length === 2) decimal = p[0] + (p[1] / 60);      // Degrees Decimal Minutes
-            else if (p.length >= 3) decimal = p[0] + (p[1] / 60) + (p[2] / 3600); // DMS
+            if (p.length === 1) decimal = p[0];
+            else if (p.length === 2) decimal = p[0] + (p[1] / 60);
+            else if (p.length >= 3) decimal = p[0] + (p[1] / 60) + (p[2] / 3600);
 
             return isNegative ? -Math.abs(decimal) : Math.abs(decimal);
         }
 
         /**
-         * Fetches elevation from a Digital Elevation Model (DEM) API
+         * Fetches Altitude from Open-Meteo DEM
          */
         async function getElevation(lat, lng) {
             try {
                 const response = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`);
                 const data = await response.json();
                 return data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Altitude unknown";
-            } catch (err) {
-                return "Elevation fetch failed";
-            }
+            } catch (err) { return "Elevation fetch failed"; }
         }
 
         /**
-         * Calculates straight-line distance (km) and compass bearing between two points
+         * Calculates Distance and Compass Bearing
          */
         function getVector(lat1, lon1, lat2, lon2) {
-            const R = 6371; // Earth's radius in km
+            const R = 6371; // km
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
-            
             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -126,14 +139,13 @@
             const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
             const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
                       Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-            let bearing = Math.atan2(y, x) * 180 / Math.PI;
-            bearing = (bearing + 360) % 360;
+            let bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
 
             return { dist: distance.toFixed(2), brng: Math.round(bearing) };
         }
 
         /**
-         * Processes input, fetches data, and updates the UI
+         * Main orchestration function
          */
         async function processCoordinates() {
             const btn = document.getElementById('genBtn');
@@ -142,28 +154,32 @@
                 const fullInput = document.getElementById('combinedInput').value.trim();
                 const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
                 
-                if (segments.length < 2) { alert("Please provide both Lat and Long."); btn.innerText = "Generate"; return; }
+                if (segments.length < 2) { 
+                    alert("Please provide both Lat and Long."); 
+                    btn.innerText = "Generate Report"; 
+                    return; 
+                }
 
                 targetLat = parseToDecimal(segments[0]);
                 targetLng = parseToDecimal(segments[1]);
 
-                if (targetLat === null || targetLng === null) { alert("Format not recognized."); btn.innerText = "Generate"; return; }
+                if (targetLat === null || targetLng === null) { 
+                    alert("Format not recognized."); 
+                    btn.innerText = "Generate Report"; 
+                    return; 
+                }
 
                 const latF = targetLat.toFixed(6), lngF = targetLng.toFixed(6);
                 const altitude = await getElevation(targetLat, targetLng);
+                const timeStr = getNZTimestamp();
 
-                // URL GENERATION
+                // Generate URLs
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
-                
-                // FIXED GOOGLE LINK: Uses Directions mode to show 'My Location' AND 'Target Pin'
-                const googleUrl = `https://www.google.com/maps/dir/?api=1&origin=My+Location&destination=${latF},${lngF}&travelmode=walking`;
-                
+                const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${latF},${lngF}&travelmode=walking`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},1000a,3500d,35y,0h,0t,0r`;
                 const windyUrl = `https://www.windy.com/${latF}/${lngF}?${latF},${lngF},12`;
-                
                 const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z/place=${latF},${lngF}`;
-                const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`
-                
+                const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
 
                 let vectorText = "";
                 if (myLat && myLng) {
@@ -171,14 +187,33 @@
                     vectorText = `\nVECTOR:   ${vec.dist}km @ ${vec.brng}° (from your position)`;
                 }
 
-                const report = `ARC LOCATION Alti+Topo+Wx\n----------------------\n---ALTITUDE(m): ${altitude}${vectorText}\n\n---COORDS: ${latF}, ${lngF}\n    DMS:${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\n\n---NZ TOPO:\n    ${topoUrl}\n\n---GMaps:\n    ${googleUrl}\n\n---Google Earth:\n    ${earthUrl}\n\n---Live Wx Radar:\n    ${zoomEarth}\n\n---Windy.com:\n    ${windyUrl}\n---Yr.no 5days:\n    ${windyUrl}`;
+                // Format the Report exactly as requested
+                const report = `ARC LOCATION Alti+Topo+Wx
+----------------------
+GENERATED: ${timeStr}
+--ALTITUDE(m): ${altitude}${vectorText}
+--COORDS: ${latF}, ${lngF}
+    DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
+--------TOPO-------------------
+--NZ TOPO--
+    ${topoUrl}
+--GMaps--
+    ${googleUrl}
+--Google Earth--
+    ${earthUrl}
+--------WX---------------------
+--Live Wx Radar--
+    ${zoomEarth}
+--Windy.com--
+    ${windyUrl}
+--Yr.no 5days--
+    ${yrNoUrl}`;
 
-                // UI Updates
+                // Update UI
                 document.getElementById('reportContent').innerText = report;
                 document.getElementById('topoLink').href = topoUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;
-
                 document.getElementById('zoomEarthLink').href = zoomEarth;
                 document.getElementById('windyLink').href = windyUrl;
                 document.getElementById('yrNoLink').href = yrNoUrl;
@@ -193,14 +228,30 @@
         }
 
         /**
-         * Captures user's live GPS coordinates
+         * Native Sharing Feature
+         */
+        async function shareReport() {
+            const reportText = document.getElementById('reportContent').innerText;
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'ARC Team Rescue Report',
+                        text: reportText
+                    });
+                } catch (err) { console.log("Share cancelled"); }
+            } else {
+                alert("Sharing not supported on this browser. Please use Copy button.");
+            }
+        }
+
+        /**
+         * GPS Capture
          */
         function getCurrentLocation() {
             if (!navigator.geolocation) return;
             navigator.geolocation.getCurrentPosition((pos) => {
                 myLat = pos.coords.latitude;
                 myLng = pos.coords.longitude;
-                // If input is empty, fill it with my location. Otherwise, just update the vector.
                 const input = document.getElementById('combinedInput');
                 if (!input.value.trim()) {
                     input.value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;

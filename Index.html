@@ -16,16 +16,18 @@
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 text-center">
         <img src="Acrlogo.png" alt="ARC Logo" class="w-12 h-12 mb-4 mx-auto">
-        
         <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
-        <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
+        <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold text-center">Alpine Rescue Canterbury</p>
         
-        <textarea id="combinedInput" rows="2" placeholder="Paste Coordinates here..." 
+        <textarea id="combinedInput" rows="2" placeholder="Paste Lat,Long here (e.g., -43.5, 172.6)" 
                class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4 text-left"></textarea>
         
         <div class="grid grid-cols-4 gap-2 mb-4">
-            <button onclick="processCoordinates()" class="col-span-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
-                Generate Map & Report
+            <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                Generate
+            </button>
+            <button onclick="getCurrentLocation()" title="Get My GPS Location" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                📍
             </button>
             <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
                 Clear
@@ -34,9 +36,11 @@
 
         <div id="resultArea" class="mt-8 hidden space-y-4 text-left">
             <div class="grid grid-cols-3 gap-2">
-                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] transition">NZ TOPO</a>
-                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] transition">Google maps</a>
-                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] transition">Google EARTH</a>
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] transition text-center">NZ TOPO</a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] transition text-center">Google Maps</a>
+                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] transition text-center">Google Earth</a>
+                <a id="metLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] transition text-center border border-blue-400/30">Metservice Wx</a>
+                <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] transition text-center">Windy.com Wx</a>
             </div>
 
             <div class="bg-slate-700 p-4 rounded-xl border border-slate-600 relative">
@@ -52,101 +56,164 @@
         </div>
     </div>
 
-   <script>
+    <script>
+        // Global state to store coordinates for distance/bearing calculations
+        let targetLat = null, targetLng = null;
+        let myLat = null, myLng = null;
+
+        /**
+         * Converts decimal degrees to a pretty DMS string (e.g., 43° 30' 15" S)
+         */
         function toDMS(decimal, isLat) {
             const absolute = Math.abs(decimal);
             const degrees = Math.floor(absolute);
             const minutesFull = (absolute - degrees) * 60;
             const minutes = Math.floor(minutesFull);
             const seconds = ((minutesFull - minutes) * 60).toFixed(2);
-            
             let direction = isLat ? (decimal >= 0 ? "N" : "S") : (decimal >= 0 ? "E" : "W");
             return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
         }
 
+        /**
+         * Universal Parser: Extracts decimal degrees from DDD, DDM, or DMS strings.
+         * Logic: Detects hemisphere by letter (S/W) or negative sign, then 
+         * calculates based on how many number groups are found.
+         */
         function parseToDecimal(input) {
             if (!input) return null;
-            const cleanInput = input.trim();
-            
-            // If it's just a pure decimal number (e.g. -43.512), return it directly
-            if (/^-?\d+(\.\d+)?$/.test(cleanInput)) {
-                return parseFloat(cleanInput);
-            }
+            const isNegative = /[SWsw-]/.test(input);
+            const parts = input.match(/\d+(\.\d+)?/g); // Extract all numbers/decimals
+            if (!parts) return null;
 
-            // Otherwise, try parsing as DMS
-            const parts = cleanInput.match(/[-+]?\d*\.?\d+/g);
-            if (!parts || parts.length === 0) return null;
-            
-            let d = parseFloat(parts[0]) || 0;
-            let m = parseFloat(parts[1]) || 0;
-            let s = parseFloat(parts[2]) || 0;
-            
-            let decimal = Math.abs(d) + (m / 60) + (s / 3600);
-            if (/[SWsw]/.test(cleanInput) || d < 0) decimal = -Math.abs(decimal);
-            return decimal;
+            const p = parts.map(Number);
+            let decimal = 0;
+
+            if (p.length === 1) decimal = p[0];                       // DDD
+            else if (p.length === 2) decimal = p[0] + (p[1] / 60);      // DDM
+            else if (p.length >= 3) decimal = p[0] + (p[1] / 60) + (p[2] / 3600); // DMS
+
+            return isNegative ? -Math.abs(decimal) : Math.abs(decimal);
         }
 
-        function processCoordinates() {
+        /**
+         * Fetches elevation (altitude) from the Open-Meteo DEM API
+         */
+        async function getElevation(lat, lng) {
             try {
+                const response = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`);
+                const data = await response.json();
+                return data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Unknown";
+            } catch (err) {
+                return "Fetch failed";
+            }
+        }
+
+        /**
+         * Calculates straight-line distance (Haversine) and Compass Bearing
+         */
+        function getVector(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Earth radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            
+            // Haversine formula for distance
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            const distance = R * c;
+
+            // Bearing formula
+            const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+            const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                      Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+            let bearing = Math.atan2(y, x) * 180 / Math.PI;
+            bearing = (bearing + 360) % 360; // Normalize to 0-360
+
+            return { distance: distance.toFixed(2), bearing: Math.round(bearing) };
+        }
+
+        /**
+         * Main orchestration function: Parsers, Fetches, and UI Updates
+         */
+        async function processCoordinates() {
+            const btn = document.getElementById('genBtn');
+            try {
+                btn.innerText = "Processing...";
                 const fullInput = document.getElementById('combinedInput').value.trim();
-                // Split by comma, semicolon, or newline
                 const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
                 
-                if (segments.length < 2) { 
-                    alert("Please enter both Latitude and Longitude (separate with a comma)."); 
-                    return; 
-                }
+                if (segments.length < 2) { alert("Please enter Lat and Long."); btn.innerText = "Generate"; return; }
 
-                const lat = parseToDecimal(segments[0]);
-                const lng = parseToDecimal(segments[1]);
+                targetLat = parseToDecimal(segments[0]);
+                targetLng = parseToDecimal(segments[1]);
 
-                if (lat === null || lng === null) { 
-                    alert("Could not interpret coordinates. Try: -43.123, 172.456"); 
-                    return; 
-                }
+                if (targetLat === null || targetLng === null) { alert("Invalid Coordinate Format."); btn.innerText = "Generate"; return; }
 
-                const latF = lat.toFixed(6);
-                const lngF = lng.toFixed(6);
+                const latF = targetLat.toFixed(6), lngF = targetLng.toFixed(6);
 
-                // FIXES:
-                // 1. NZ Topo: Added pin=1
+                // 1. Fetch Altitude (Elevation)
+                const altitude = await getElevation(targetLat, targetLng);
+
+                // 2. Build Tool Links
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
-                
-                // 2. Google Maps: Fixed the domain and used search API for a proper pin
                 const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
-                
-                // 3. Google Earth: Used /web/search/ to force the pin and fly-to animation
-                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},500a,3500d,35y,0h,0t,0r`;
+                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},1000a,3500d,35y,0h,0t,0r`;
+                const windyUrl = `https://www.windy.com/${latF}/${lngF}?${latF},${lngF},12`;
+                const metUrl = `https://www.metservice.com/mountains-and-parks/national-parks/aoraki-mount-cook`;
 
-                const report = `ARC LOCATION REPORT\n----------------------\nDECIMAL: ${latF}, ${lngF}\nDMS:     ${toDMS(lat, true)}, ${toDMS(lng, false)}\n\nNZ TOPO: ${topoUrl}\nGoogle Maps:  ${googleUrl}\nGoogle EARTH:   ${earthUrl}`;
+                // 3. Calculate Vector if user GPS is available
+                let vectorText = "";
+                if (myLat && myLng) {
+                    const vec = getVector(myLat, myLng, targetLat, targetLng);
+                    vectorText = `\nVECTOR:   ${vec.distance}km @ ${vec.bearing}° (from your GPS)`;
+                }
 
+                // 4. Construct the Final Report
+                const report = `ARC LOCATION REPORT\n----------------------\nCOORDS:   ${latF}, ${lngF}\nDMS:      ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}\nALTITUDE(m): ${altitude}${vectorText}\n\nNZ TOPO:  ${topoUrl}\nGMaps:   ${googleUrl}\n Google Earth: ${earthUrl}\nMetService: ${metUrl}\nWINDY:    ${windyUrl}`;
+
+                // Update UI
                 document.getElementById('reportContent').innerText = report;
                 document.getElementById('topoLink').href = topoUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('metLink').href = metUrl;
+                document.getElementById('windyLink').href = windyUrl;
                 document.getElementById('mapFrame').src = topoUrl;
-                document.getElementById('resultArea').classList.remove('hidden');
                 
-            } catch (err) {
-                alert("Error: " + err.message);
+                document.getElementById('resultArea').classList.remove('hidden');
+                btn.innerText = "Generate";
+            } catch (err) { 
+                alert("Error: " + err.message); 
+                btn.innerText = "Generate";
             }
+        }
+
+        /**
+         * Pings internal GPS. Stores user location to compare with target.
+         */
+        function getCurrentLocation() {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition((pos) => {
+                myLat = pos.coords.latitude;
+                myLng = pos.coords.longitude;
+                document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;
+                processCoordinates();
+            }, (err) => alert("GPS Access Denied."), {enableHighAccuracy: true});
         }
 
         function clearAll() {
             document.getElementById('combinedInput').value = "";
             document.getElementById('resultArea').classList.add('hidden');
             document.getElementById('mapFrame').src = "";
+            targetLat = null; targetLng = null;
         }
 
         async function copyToClipboard() {
             const text = document.getElementById('reportContent').innerText;
-            try {
-                await navigator.clipboard.writeText(text);
-                alert("ARC Report copied to clipboard!");
-            } catch (err) {
-                alert("Manual copy required.");
-            }
+            await navigator.clipboard.writeText(text);
+            alert("ARC Report copied to clipboard.");
         }
     </script>
 </body>
-    </html>
+</html>

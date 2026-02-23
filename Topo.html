@@ -29,7 +29,7 @@
                 Generate Report
             </button>
             <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
-                📍
+                My current location
             </button>
             <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
                 Clear
@@ -191,27 +191,22 @@
                 const report = `ARC LOCATION Alti+Topo+Wx
 ----------------------
 GENERATED: ${timeStr}
----ALTITUDE(m): ${altitude}${vectorText}
-
----COORDS: ${latF}, ${lngF}
+--ALTITUDE(m): ${altitude}${vectorText}
+--COORDS: ${latF}, ${lngF}
     DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
-
----NZ TOPO:
+--------TOPO-------------------
+--NZ TOPO--
     ${topoUrl}
-
----GMaps:
+--GMaps--
     ${googleUrl}
-
----Google Earth:
+--Google Earth--
     ${earthUrl}
-
----Live Wx Radar:
+--------WX---------------------
+--Live Wx Radar--
     ${zoomEarth}
-
----Windy.com:
+--Windy.com--
     ${windyUrl}
-
----Yr.no 5days:
+--Yr.no 5days--
     ${yrNoUrl}`;
 
                 // Update UI

@@ -52,7 +52,7 @@
         </div>
     </div>
 
-    <script>
+   <script>
         function toDMS(decimal, isLat) {
             const absolute = Math.abs(decimal);
             const degrees = Math.floor(absolute);
@@ -66,32 +66,57 @@
 
         function parseToDecimal(input) {
             if (!input) return null;
-            const parts = input.match(/[-+]?\d*\.?\d+/g);
+            const cleanInput = input.trim();
+            
+            // If it's just a pure decimal number (e.g. -43.512), return it directly
+            if (/^-?\d+(\.\d+)?$/.test(cleanInput)) {
+                return parseFloat(cleanInput);
+            }
+
+            // Otherwise, try parsing as DMS
+            const parts = cleanInput.match(/[-+]?\d*\.?\d+/g);
             if (!parts || parts.length === 0) return null;
+            
             let d = parseFloat(parts[0]) || 0;
             let m = parseFloat(parts[1]) || 0;
             let s = parseFloat(parts[2]) || 0;
+            
             let decimal = Math.abs(d) + (m / 60) + (s / 3600);
-            if (/[SWsw]/.test(input) || d < 0) decimal = -Math.abs(decimal);
+            if (/[SWsw]/.test(cleanInput) || d < 0) decimal = -Math.abs(decimal);
             return decimal;
         }
 
         function processCoordinates() {
             try {
                 const fullInput = document.getElementById('combinedInput').value.trim();
+                // Split by comma, semicolon, or newline
                 const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
-                if (segments.length < 2) { alert("Use a comma or new line to separate Lat/Long."); return; }
+                
+                if (segments.length < 2) { 
+                    alert("Please enter both Latitude and Longitude (separate with a comma)."); 
+                    return; 
+                }
 
                 const lat = parseToDecimal(segments[0]);
                 const lng = parseToDecimal(segments[1]);
-                if (lat === null || lng === null) { alert("Could not interpret coordinates."); return; }
+
+                if (lat === null || lng === null) { 
+                    alert("Could not interpret coordinates. Try: -43.123, 172.456"); 
+                    return; 
+                }
 
                 const latF = lat.toFixed(6);
                 const lngF = lng.toFixed(6);
 
+                // FIXES:
+                // 1. NZ Topo: Added pin=1
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
-                const googleUrl = `https://www.google.com/maps?q=${latF},${lngF}`;
-                const earthUrl = `https://earth.google.com/web/@${latF},${lngF},500a,35000d,35y,0h,0t,0r`;
+                
+                // 2. Google Maps: Fixed the domain and used search API for a proper pin
+                const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+                
+                // 3. Google Earth: Used /web/search/ to force the pin and fly-to animation
+                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}/@${latF},${lngF},500a,3500d,35y,0h,0t,0r`;
 
                 const report = `ARC LOCATION REPORT\n----------------------\nDECIMAL: ${latF}, ${lngF}\nDMS:     ${toDMS(lat, true)}, ${toDMS(lng, false)}\n\nNZ TOPO: ${topoUrl}\nGoogle Maps:  ${googleUrl}\nGoogle EARTH:   ${earthUrl}`;
 
@@ -101,6 +126,7 @@
                 document.getElementById('earthLink').href = earthUrl;
                 document.getElementById('mapFrame').src = topoUrl;
                 document.getElementById('resultArea').classList.remove('hidden');
+                
             } catch (err) {
                 alert("Error: " + err.message);
             }
@@ -116,7 +142,7 @@
             const text = document.getElementById('reportContent').innerText;
             try {
                 await navigator.clipboard.writeText(text);
-                alert("ARC Report copied!");
+                alert("ARC Report copied to clipboard!");
             } catch (err) {
                 alert("Manual copy required.");
             }

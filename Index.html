@@ -16,7 +16,7 @@
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
         <div class="text-center">
-            <img src="Acrlogo.png" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto">
+            <img src="Acrlogo.png" id="logoTrigger" onclick="handleLogoClick()" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto cursor-pointer active:opacity-50">
             <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
             <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
         </div>
@@ -36,9 +36,9 @@
             </button>
         </div>
 
-        <div class="mt-8 pt-4 border-t border-slate-700 text-center">
+        <div id="secretFooter" class="mt-4 pt-4 border-t border-slate-700 text-center hidden">
             <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-                <span id="visitCount" class="text-emerald-500">...</span> hits.
+                ARC Tool Usage: <span id="visitCount" class="text-emerald-500">...</span> hits.
             </p>
         </div>
 
@@ -68,13 +68,11 @@
             
             <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
         </div>
-       
     </div>
 
     <script>
         // --- STEALTH COUNTER LOGIC ---
         let clickCount = 0;
-        
         async function updateCounter() {
             try {
                 // Using CounterAPI.dev (current 2026 standard)
@@ -154,7 +152,7 @@
         }
 
         /**
-         * Calculates Distance and Compass Bearing
+         * Calculates Vector with Magnetic Adjustment
          */
         function getVector(lat1, lon1, lat2, lon2) {
             const R = 6371; // km
@@ -165,13 +163,22 @@
                       Math.sin(dLon / 2) * Math.sin(dLon / 2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             const distance = R * c;
-
+            
             const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
             const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
                       Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-            let bearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+            
+            let gridBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+            
+            // CANTERBURY DECLINATION: ~23° East
+            // To get Magnetic Heading: Magnetic = Grid - Declination (for East declination)
+            let magHeading = (gridBearing - 23 + 360) % 360;
 
-            return { dist: distance.toFixed(2), brng: Math.round(bearing) };
+            return { 
+                dist: distance.toFixed(2), 
+                grid: Math.round(gridBearing),
+                mag: Math.round(magHeading)
+            };
         }
 
         /**
@@ -214,10 +221,9 @@
                 let vectorText = "";
                 if (myLat && myLng) {
                     const vec = getVector(myLat, myLng, targetLat, targetLng);
-                    vectorText = `\nVECTOR:   ${vec.dist}km @ ${vec.brng}° (from your position)`;
+                    vectorText = `\n--VECTOR:   ${vec.dist}km\n--BEARING:  ${vec.grid}° (Grid) | ${vec.mag}° (Mag 23 deg offset Canterbury declination)`;
                 }
 
-                // Format the Report exactly as requested
                 const report = `ARC LOCATION Alti+Topo+Wx
 ----------------------
 GENERATED: ${timeStr}

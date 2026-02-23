@@ -76,7 +76,7 @@
         async function updateCounter() {
             try {
                 // Using CounterAPI.dev (current 2026 standard)
-                const response = await fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/update');
+                const response = await fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up');
                 const data = await response.json();
                 document.getElementById('visitCount').innerText = data.count;
             } catch (err) {

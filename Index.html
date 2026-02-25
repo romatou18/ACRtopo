@@ -7,351 +7,416 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="manifest" href="/manifest.json">
     <script>
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js');
-    }
+        // Service Worker registration for offline PWA capabilities
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
     </script>
+    <style>
+        /* Print styling for "Save as PDF" functionality */
+        @media print {
+            body { background: white; color: black; padding: 0; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            .bg-slate-800 { background: white !important; border: none !important; box-shadow: none !important; }
+            .report-box { border: 1px solid #000 !important; background: #fff !important; }
+            pre { color: black !important; font-size: 12pt; }
+        }
+    </style>
 </head>
 <body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS()">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
-        <div class="text-center">
+        
+        <div class="text-center no-print">
             <img src="Acrlogo.png" id="logoTrigger" onclick="handleLogoClick()" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto cursor-pointer active:opacity-50">
             <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
             <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
         </div>
         
-        <textarea id="combinedInput" rows="2" placeholder="Paste Lat, Long here (DDD -43.52, DMS S43°03'07.200, DDM S43°03.120') ..." 
-               class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4"></textarea>
-        
-        <div class="grid grid-cols-4 gap-2 mb-4">
-            <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
-                Generate Report
-            </button>
-            <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
-                My current location
-            </button>
-            <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
-                Clear
-            </button>
+        <div class="no-print">
+            <textarea id="combinedInput" rows="3" 
+                placeholder="Paste any format e.g.
+DDD: -43.54, 172.64
+DMS: S43°32'24, E172°38'24 
+DDM: S43 32.4S, E172 38.4
+NZTM: 1571000, 5178500"
+                class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-2 text-sm"></textarea>
+            
+            <div class="grid grid-cols-4 gap-2">
+                <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                    Generate Report
+                </button>
+                <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
+                    My location
+                </button>
+                <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
+                    Clear
+                </button>
+            </div>
+            
+            <div id="gpsStatus" class="text-[10px] text-slate-400 mt-2 text-center font-mono tracking-wide">
+                GPS: Acquiring satellite lock...
+            </div>
         </div>
 
         <div id="secretFooter" class="mt-4 pt-4 border-t border-slate-700 text-center hidden">
+            <div id="testOutput" class="text-[9px] font-mono text-left bg-black p-2 rounded mb-2 text-gray-400 max-h-32 overflow-y-auto"></div>
             <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
                 ARC Tool Usage: <span id="visitCount" class="text-emerald-500">...</span> hits.
             </p>
         </div>
 
-        <div id="resultArea" class="mt-8 hidden space-y-4">
-            <div class="grid grid-cols-4 gap-2">
-                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold text-[10px] text-center">NZ Topo (web)</a>
-                <button onclick="openTopoApp()" class="flex items-center justify-center bg-emerald-700 hover:bg-emerald-600 p-3 rounded-lg font-bold text-[10px] text-center border border-emerald-400/50">NZ Topo (mobile)</button>
-                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-3 rounded-lg font-bold text-[10px] text-center">G Maps</a>
-                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-3 rounded-lg font-bold text-[10px] text-center">G Earth</a>
-                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Live Wx RADAR</a>
-                <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Windy.com SPOT</a>
-                <a id="yrNoLink" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-3 rounded-lg font-bold text-[10px] text-center">Yr.no 5days</a>
+        <div id="resultArea" class="mt-4 hidden space-y-4">
+            
+            <div class="grid grid-cols-4 gap-2 no-print">
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold text-[9px] text-center">NZ Topo50</a>
+                <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-2 rounded-lg font-bold text-[9px] text-center">G Maps</a>
+                <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-2 rounded-lg font-bold text-[9px] text-center">G Earth</a>
+                <a id="windyLinkBtn" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-2 rounded-lg font-bold text-[9px] text-center">Windy.com Wx</a>
+                <a id="yrNoLinkBtn" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-2 rounded-lg font-bold text-[9px] text-center">Yr.no Wx</a>
+                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-2 rounded-lg font-bold text-[9px] text-center">Wx Radar</a>
             </div>
 
-            <div class="bg-slate-700 p-4 rounded-xl border border-slate-600">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ARC Location Report</span>
+            <div class="report-box bg-slate-700 p-4 rounded-xl border border-slate-600">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest no-print">ARC Location Report</span>
                 <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
                 
-                <div class="grid grid-cols-2 gap-2 mt-4">
-                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-xs font-bold py-3 rounded-lg transition">
-                        📋 Copy Text
-                    </button>
-                    <button onclick="shareReport()" class="bg-blue-700/20 hover:bg-blue-700/40 text-blue-400 border border-blue-500/30 text-xs font-bold py-3 rounded-lg transition">
-                        📤 Share...
-                    </button>
+                <div class="grid grid-cols-3 gap-2 mt-4 no-print">
+                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold py-3 rounded-lg">📋 COPY</button>
+                    <button onclick="saveAsPDF()" class="bg-slate-600 hover:bg-slate-500 text-white text-[10px] font-bold py-3 rounded-lg">📄 PDF</button>
+                    <button onclick="shareReport()" class="bg-blue-700/20 hover:bg-blue-700/40 text-blue-400 border border-blue-500/30 text-[10px] font-bold py-3 rounded-lg">📤 SHARE</button>
                 </div>
             </div>
-            
-            <iframe id="mapFrame" class="w-full h-64 rounded-xl border border-slate-600 bg-slate-800" src=""></iframe>
         </div>
     </div>
 
     <script>
-        // --- STEALTH COUNTER LOGIC ---
-        let clickCount = 0;
-        async function updateCounter() {
-            try {
-                // Using CounterAPI.dev (current 2026 standard)
-                const response = await fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up');
-                const data = await response.json();
-                document.getElementById('visitCount').innerText = data.count;
-            } catch (err) {
-                document.getElementById('visitCount').innerText = "ERR";
-            }
-        }
+        /**
+         * ARC TEAM TOPO FINDER - ENGINE V5.6
+         * Features: Rigorous NZTM, Segmented Parsing, Elevation, Mag/Grid Bearings, Live GPS Status, Usage Counter
+         */
 
-        function handleLogoClick() {
-            clickCount++;
-            if (clickCount === 3) {
-                document.getElementById('secretFooter').classList.remove('hidden');
-                updateCounter();
-            }
-            // Reset click count after 2 seconds of inactivity
-            setTimeout(() => { clickCount = 0; }, 2000);
-        }
-        // Store coordinates globally for vector comparisons
-        
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
+        let clickCount = 0;
+        const MAG_DEC = 23.5; // Average Magnetic Declination for Canterbury
 
-        /**
-         * Generates local NZ Timestamp
-         * Auto-prompt GPS on page load
+        // ------------------------------------------------------------------
+        // NZTM2000 Constants (GRS80 Ellipsoid)
+        // ------------------------------------------------------------------
+        const NZTM = {
+            a: 6378137.0,             // Semi-major axis
+            f: 1 / 298.257222101,     // Flattening
+            phizero: 0,               // Origin Latitude
+            lambdazero: 173.0,        // Origin Longitude (Central Meridian)
+            Nzero: 10000000,          // False Northing
+            Ezero: 1600000,           // False Easting
+            kzero: 0.9996             // Central Meridian Scale Factor
+        };
+
+        // ------------------------------------------------------------------
+        // 1. HIGH PRECISION NZTM TO LAT/LON
+        // ------------------------------------------------------------------
+        function nztmToLatLon(E, N) {
+            const esq = 2 * NZTM.f - NZTM.f ** 2; 
+            const n = NZTM.f / (2 - NZTM.f);
+            const a = NZTM.a;
+            
+            const M = (N - NZTM.Nzero) / NZTM.kzero;
+            const A = a * (1 - n + (5/4)*(n**2 - n**3) + (81/64)*(n**4 - n**5));
+            const sigma = M / A;
+            const phip = sigma + 
+                         (3*n/2 - 27*n**3/32) * Math.sin(2*sigma) + 
+                         (21*n**2/16 - 55*n**4/32) * Math.sin(4*sigma) + 
+                         (151*n**3/96) * Math.sin(6*sigma);
+            
+            const sin_p = Math.sin(phip), cos_p = Math.cos(phip), tan_p = Math.tan(phip);
+            const rho = a * (1 - esq) / Math.pow(1 - esq * sin_p**2, 1.5);
+            const nu = a / Math.sqrt(1 - esq * sin_p**2);
+            const psi = nu / rho, t = tan_p, Et = E - NZTM.Ezero;
+            
+            const latTerm1 = (t * Et**2) / (2 * rho * nu * NZTM.kzero**2);
+            const latTerm2 = (t * Et**4) / (24 * rho * nu**3 * NZTM.kzero**4) * (5 + 3*t**2 + 8*psi - 4*psi**2 - 9*psi*t**2);
+            const lat = (phip - latTerm1 + latTerm2) * 180 / Math.PI;
+            
+            const lonTerm1 = Et / (nu * NZTM.kzero * cos_p);
+            const lonTerm2 = (Et**3) / (6 * nu**3 * NZTM.kzero**3 * cos_p) * (psi + 2*t**2);
+            const lon = NZTM.lambdazero + (lonTerm1 - lonTerm2) * 180 / Math.PI;
+            
+            return { lat, lon };
+        }
+
+        // ------------------------------------------------------------------
+        // 2. HIGH PRECISION LAT/LON TO NZTM 
+        // ------------------------------------------------------------------
+        function latLonToNZTM(lat, lon) {
+            const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180, lam0 = NZTM.lambdazero * Math.PI / 180;
+            const esq = 2 * NZTM.f - NZTM.f ** 2, a = NZTM.a;
+            
+            const nu = a / Math.sqrt(1 - esq * Math.sin(phi)**2);
+            const rho = a * (1 - esq) / Math.pow(1 - esq * Math.sin(phi)**2, 1.5);
+            const psi = nu / rho, t = Math.tan(phi), w = lam - lam0;
+            
+            const b = a * (1 - NZTM.f), n = (a - b) / (a + b);
+            const M = a * (1 - n) * (1 - n**2) * ( 
+                (1 + 9/4*n**2 + 225/64*n**4)*phi - 
+                (3/2*n - 27/32*n**3)*Math.sin(2*phi) + 
+                (15/16*n**2 - 105/128*n**4)*Math.sin(4*phi) 
+            );
+            
+            const N = NZTM.Nzero + NZTM.kzero * (M + nu*t*w**2/2*Math.cos(phi)**2 + nu*t*w**4/24*Math.pow(Math.cos(phi),4)*(5 - t**2 + 9*psi + 4*psi**2));
+            const E = NZTM.Ezero + NZTM.kzero * (nu*w*Math.cos(phi) + nu*w**3/6*Math.pow(Math.cos(phi),3)*(psi - t**2));
+            
+            return { e: Math.round(E), n: Math.round(N) };
+        }
+         /**
+         * NZ TOPO50 SHEET CALCULATOR
+         * Determines the map sheet (e.g., BX24) for radio grid refs.
          */
-        function initGPS() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition((pos) => {
-                    myLat = pos.coords.latitude;
-                    myLng = pos.coords.longitude;
-                }, (err) => console.log("GPS prompt declined"), {enableHighAccuracy: true});
+        function getTopo50Sheet(e, n) {
+            const rows = ["AS","AT","AU","AV","AW","AX","AY","AZ","BA","BB","BC","BD","BE","BF","BG","BH","BI","BJ","BK","BL","BM","BN","BO","BP","BQ","BR","BS","BT","BU","BV","BW","BX","BY","BZ","CA","CB","CC","CD"];
+            // NZTM Origin for BX24 region approx 1,500,000 / 5,100,000
+            // This is a simplified grid math for the NZTM map index
+            const rowIdx = Math.floor((6000000 - n) / 36000); 
+            const colIdx = Math.floor((e - 1000000) / 24000) + 1;
+            const rowLetter = rows[rowIdx] || "??";
+            const colNumber = colIdx.toString().padStart(2, '0');
+            return `${rowLetter}${colNumber}`;
+        }
+
+        // ------------------------------------------------------------------
+        // 3. SEGMENTED PARSER 
+        // ------------------------------------------------------------------
+        function flexibleParse(input) {
+            const clean = input.trim();
+            const nums = clean.match(/[-+]?\d*\.?\d+/g);
+            if (!nums || nums.length < 2) return null;
+            
+            if (nums.length === 2 && parseFloat(nums[0]) > 900000) {
+                return nztmToLatLon(parseFloat(nums[0]), parseFloat(nums[1]));
             }
-        }
-
-        function getNZTimestamp() {
-            return new Date().toLocaleString('en-NZ', { 
-                day: '2-digit', month: 'short', year: 'numeric', 
-                hour: '2-digit', minute: '2-digit', hour12: false,
-                timeZoneName: 'short' 
-            });
-        }
-
-        /**
-         * Converts decimal degrees into DMS (Degrees, Minutes, Seconds)
-         */
-        function toDMS(decimal, isLat) {
-            const absolute = Math.abs(decimal);
-            const degrees = Math.floor(absolute);
-            const minutesFull = (absolute - degrees) * 60;
-            const minutes = Math.floor(minutesFull);
-            const seconds = ((minutesFull - minutes) * 60).toFixed(2);
-            let direction = isLat ? (decimal >= 0 ? "N" : "S") : (decimal >= 0 ? "E" : "W");
-            return `${degrees}°${minutes}'${seconds}"${direction}`;
-        }
-
-        /**
-         * Parses coordinate input (DDD, DDM, or DMS)
-         */
-        function parseToDecimal(input) {
-            if (!input) return null;
-            const isNegative = /[SWsw-]/.test(input);
-            const parts = input.match(/\d+(\.\d+)?/g);
-            if (!parts) return null;
-
-            const p = parts.map(Number);
-            let decimal = 0;
-
-            if (p.length === 1) decimal = p[0];
-            else if (p.length === 2) decimal = p[0] + (p[1] / 60);
-            else if (p.length >= 3) decimal = p[0] + (p[1] / 60) + (p[2] / 3600);
-
-            return isNegative ? -Math.abs(decimal) : Math.abs(decimal);
-        }
-
-        /**
-         * Fetches Altitude from Open-Meteo DEM
-         */
-        async function getElevation(lat, lng) {
-            try {
-                const response = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lng}`);
-                const data = await response.json();
-                return data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Altitude unknown";
-            } catch (err) { return "Elevation fetch failed"; }
-        }
-
-        /**
-         * Calculates Vector with Magnetic Adjustment
-         */
-        function getVector(lat1, lon1, lat2, lon2) {
-            const R = 6371; // km
-            const dLat = (lat2 - lat1) * Math.PI / 180;
-            const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            const distance = R * c;
             
-            const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-            const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
-                      Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+            const midIndex = Math.floor(nums.length / 2);
+            const stringHalfIndex = Math.floor(clean.length / 2);
+            const part1 = clean.substring(0, stringHalfIndex);
+            const part2 = clean.substring(stringHalfIndex);
             
-            let gridBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-            
-            // CANTERBURY DECLINATION: ~23° East
-            // To get Magnetic Heading: Magnetic = Grid - Declination (for East declination)
-            let magHeading = (gridBearing - 23 + 360) % 360;
-
-            return { 
-                dist: distance.toFixed(2), 
-                grid: Math.round(gridBearing),
-                mag: Math.round(magHeading)
-            };
-        }
-
-        // Handles opening the NZ Topo50 App on iOS or Android
-        function openTopoApp() {
-            if (!targetLat || !targetLng) return;
-            const lat = targetLat.toFixed(6);
-            const lon = targetLng.toFixed(6);
-            
-            // Android Intent for Topo50 North or South Island apps
-            // This structure is more likely to trigger the OS to find the app
-            const androidIntent = `intent://map?lat=${lat}&lon=${lon}#Intent;scheme=topo50map;package=com.atlogis.nztopo50.south;end`;
-            const iosScheme = `topo50map://map?lat=${lat}&lon=${lon}`;
-
-            // Try the Intent (Android) first, then fallback to Scheme (iOS)
-            if (/android/i.test(navigator.userAgent)) {
-                window.location.href = androidIntent;
-            } else {
-                window.location.href = iosScheme;
+            function convertSegmentToDec(arr, rawText) {
+                let d = Math.abs(parseFloat(arr[0] || 0));
+                let m = (parseFloat(arr[1] || 0)) / 60;
+                let s = (parseFloat(arr[2] || 0)) / 3600;
+                let res = d + m + s;
+                if (rawText.includes('-') || /[SwW]/.test(rawText)) res = -res;
+                return res;
             }
+            
+            return { lat: convertSegmentToDec(nums.slice(0, midIndex), part1), lon: convertSegmentToDec(nums.slice(midIndex), part2) };
         }
 
-        /**
-         * Main orchestration function
-         */
+        // ------------------------------------------------------------------
+        // 4. MAIN PROCESSOR & REPORT GENERATOR
+        // ------------------------------------------------------------------
         async function processCoordinates() {
             const btn = document.getElementById('genBtn');
             try {
                 btn.innerText = "Processing...";
                 
-                // Final GPS check
-                if (myLat === null || myLng === null) {
-                    await new Promise((resolve) => {
-                        navigator.geolocation.getCurrentPosition((pos) => {
-                            myLat = pos.coords.latitude;
-                            myLng = pos.coords.longitude;
-                            resolve();
-                        }, () => resolve(), {enableHighAccuracy: true, timeout: 3000});
-                    });
-                }
-
-                const fullInput = document.getElementById('combinedInput').value.trim();
-                const segments = fullInput.split(/[,;\n]/).filter(s => s.trim() !== "");
+                const res = flexibleParse(document.getElementById('combinedInput').value);
+                if (!res) throw new Error("Format error. Check your coordinates.");
+                targetLat = res.lat; 
+                targetLng = res.lon;
                 
-                if (segments.length < 2) { 
-                    alert("Please provide both Lat and Long."); 
-                    btn.innerText = "Generate Report"; 
-                    return; 
+                const nztm = latLonToNZTM(targetLat, targetLng);
+                const sheet = getTopo50Sheet(nztm.e, nztm.n);
+                const gE = Math.floor((nztm.e % 100000) / 100).toString().padStart(3, '0');
+                const gN = Math.floor((nztm.n % 100000) / 100).toString().padStart(3, '0');
+
+                let vectorReport = "";
+                if (myLat && myLng) {
+                    const dLat = (targetLat - myLat) * Math.PI / 180;
+                    const dLon = (targetLng - myLng) * Math.PI / 180;
+                    const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.sin(dLon/2)**2;
+                    const dist = (12742 * Math.atan2(Math.sqrt(a_v), Math.sqrt(1-a_v))).toFixed(2);
+                    
+                    const y_v = Math.sin(dLon) * Math.cos(targetLat*Math.PI/180);
+                    const x_v = Math.cos(myLat*Math.PI/180)*Math.sin(targetLat*Math.PI/180) - Math.sin(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.cos(dLon);
+                    const gridBrg = (Math.atan2(y_v, x_v) * 180 / Math.PI + 360) % 360;
+                    const magBrg = (gridBrg - MAG_DEC + 360) % 360;
+                    
+                    vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination)`;
                 }
 
-                targetLat = parseToDecimal(segments[0]);
-                targetLng = parseToDecimal(segments[1]);
-
-                if (targetLat === null || targetLng === null) { 
-                    alert("Format not recognized."); 
-                    btn.innerText = "Generate Report"; 
-                    return; 
+                let alti = "Checking...";
+                try {
+                    const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
+                    const data = await r.json();
+                    alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
+                } catch(e) {
+                    alti = "Offline";
                 }
+                
+                // Define latF and lngF here to fix the "Undefined" error
+                const latF = targetLat.toFixed(6);
+                const lngF = targetLng.toFixed(6);
 
-                const latF = targetLat.toFixed(6), lngF = targetLng.toFixed(6);
-                const altitude = await getElevation(targetLat, targetLng);
-                const timeStr = getNZTimestamp();
 
                 // Generate URLs
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
                 // const topoAppUrl = `topo50map://map?lat=${latF}&lon=${lngF}`;
-                const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+                const googleUrl = `http://googleusercontent.com/maps.google.com/q=${latF},${lngF}`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
                 const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
                 const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
                 const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
-
-                let vectorText = "";
-                if (myLat !== null && myLng !== null) {
-                    const vec = getVector(myLat, myLng, targetLat, targetLng);
-                    vectorText = `\n--VECTOR:   ${vec.dist}km\n--BEARING:  ${vec.grid}° (Grid) | ${vec.mag}° (Mag 23°E Canterbury)`;
-                }
-
-                const report = `ARC LOCATION Alti+Topo+Wx
+                
+                const report = `ARC LOCATION REPORT
 ----------------------
-GENERATED: ${timeStr}
---ALTITUDE(AMSL): ${altitude}${vectorText}
---COORDS: ${latF}, ${lngF}
-    DMS: ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
---------TOPO-------------------
---NZ TOPO--
-    ${topoUrl}
---GMaps--
-    ${googleUrl}
---Google Earth--
-    ${earthUrl}
---------WX---------------------
---Live Wx Radar--
-    ${zoomEarth}
---Windy.com--
-    ${windyUrl}
---Yr.no 5days--
-    ${yrNoUrl}`;
+TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
+ALT   :   ${alti}${vectorReport}
 
-                // Update UI
+--Topo50 GRID Ref+Sheet (For Radio comms):
+SHEET: ${sheet}  REF: ${gE} ${gN}
+
+--COORDINATES:
+NZTM2000  :   E${nztm.e} N${nztm.n}
+DDD   :   ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
+DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
+DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
+
+--LINKS:
+NZ TOPO: ${topoUrl}
+G.Maps:   ${googleUrl}
+G.Earth:  ${earthUrl}
+WINDY.com:${windyUrl}
+YR.no:   ${yrNoUrl}`;
+
                 document.getElementById('reportContent').innerText = report;
+                
                 document.getElementById('topoLink').href = topoUrl;
-                // document.getElementById('topoAppLink').href = topoAppUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;
-                document.getElementById('zoomEarthLink').href = zoomEarth;
-                document.getElementById('windyLink').href = windyUrl;
-                document.getElementById('yrNoLink').href = yrNoUrl;
-                document.getElementById('mapFrame').src = topoUrl;
+                document.getElementById('windyLinkBtn').href = windyUrl;
+                document.getElementById('yrNoLinkBtn').href = yrNoUrl;
                 
                 document.getElementById('resultArea').classList.remove('hidden');
                 btn.innerText = "Generate Report";
+                
             } catch (err) { 
-                alert("Error: " + err.message); 
-                btn.innerText = "Generate Report";
+                alert(err.message); 
+                btn.innerText = "Generate Report"; 
             }
         }
 
-        /**
-         * Native Sharing Feature
-         */
-        async function shareReport() {
-            const reportText = document.getElementById('reportContent').innerText;
-            if (navigator.share) {
-                try {
-                    await navigator.share({
-                        title: 'ARC Team Rescue Report',
-                        text: reportText
-                    });
-                } catch (err) { console.log("Share cancelled"); }
+        // ------------------------------------------------------------------
+        // 5. UTILITY FUNCTIONS
+        // ------------------------------------------------------------------
+        function toDMS(dec, isLat) {
+            const abs = Math.abs(dec), d = Math.floor(abs), m = Math.floor((abs - d) * 60), s = ((abs - d - m/60) * 3600).toFixed(1);
+            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}' ${s}"`;
+        }
+        
+        function toDDM(dec, isLat) {
+            const abs = Math.abs(dec), d = Math.floor(abs), m = ((abs - d) * 60).toFixed(3);
+            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}'`;
+        }
+
+        // Live GPS Tracking with Mobile/PC detection and 3-second timeout
+        function initGPS() { 
+            const statusBox = document.getElementById('gpsStatus');
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            // Skip GPS usage on PC completely
+            if (!isMobile) {
+                statusBox.innerHTML = `<span class="text-slate-500">● PC Detected: GPS Vector Disabled</span>`;
+                return;
+            }
+
+            if (navigator.geolocation) {
+                statusBox.innerHTML = `GPS: Acquiring satellite lock (5s max)...`;
+                
+                // Attempt a quick 3-second check on mobile
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => { 
+                        myLat = pos.coords.latitude; 
+                        myLng = pos.coords.longitude; 
+                        statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(pos.coords.accuracy)}m)</span>`;
+                        
+                        // If successful, switch to watchPosition to keep coordinates current
+                        navigator.geolocation.watchPosition(
+                            (wPos) => {
+                                myLat = wPos.coords.latitude; 
+                                myLng = wPos.coords.longitude;
+                                statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(wPos.coords.accuracy)}m)</span>`;
+                            },
+                            (err) => {}, // Ignore further minor drops
+                            {enableHighAccuracy: true, maximumAge: 5000, timeout: 10000}
+                        );
+                    }, 
+                    (err) => {
+                        // Timeout hit or permission denied
+                        statusBox.innerHTML = `<span class="text-amber-500">● GPS Timeout/No Fix. Vector skipped.</span>`;
+                        myLat = null;
+                        myLng = null;
+                    }, 
+                    {enableHighAccuracy: true, timeout: 5000, maximumAge: 0}
+                ); 
             } else {
-                alert("Sharing not supported on this browser. Please use Copy button.");
+                statusBox.innerHTML = `<span class="text-red-500">● GPS Not Supported</span>`;
             }
         }
 
-        /**
-         * GPS Capture
-         */
-        function getCurrentLocation() {
-            if (!navigator.geolocation) return;
-            navigator.geolocation.getCurrentPosition((pos) => {
-                myLat = pos.coords.latitude;
-                myLng = pos.coords.longitude;
-                const input = document.getElementById('combinedInput');
-                if (!input.value.trim()) {
-                    input.value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;
-                }
-                processCoordinates();
-            }, (err) => alert("GPS error: " + err.message), {enableHighAccuracy: true});
+        function getCurrentLocation() { 
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (!isMobile) {
+                alert("GPS is disabled on PC. Please type coordinates manually.");
+                return;
+            }
+            if(!myLat || !myLng) {
+                alert("No GPS fix acquired. The vector/location features will be skipped.");
+                return;
+            }
+            document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`; 
+            processCoordinates(); 
         }
 
-        function clearAll() {
-            document.getElementById('combinedInput').value = "";
-            document.getElementById('resultArea').classList.add('hidden');
-            document.getElementById('mapFrame').src = "";
-            targetLat = null; targetLng = null;
+        function clearAll() { 
+            document.getElementById('combinedInput').value = ""; 
+            document.getElementById('resultArea').classList.add('hidden'); 
         }
 
-        async function copyToClipboard() {
-            const text = document.getElementById('reportContent').innerText;
-            await navigator.clipboard.writeText(text);
-            alert("Report copied!");
+        function copyToClipboard() { navigator.clipboard.writeText(document.getElementById('reportContent').innerText); alert("Copied to clipboard"); }
+        function saveAsPDF() { window.print(); }
+        function shareReport() { if (navigator.share) navigator.share({ title: 'ARC Report', text: document.getElementById('reportContent').innerText }); }
+        
+        // Hidden Counter & Engine Tests
+        function handleLogoClick() { 
+            if (++clickCount === 3) {
+                document.getElementById('secretFooter').classList.remove('hidden');
+                runUnitTests();
+                // Fetch counter API
+                fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up')
+                    .then(r => r.json())
+                    .then(d => document.getElementById('visitCount').innerText = d.count)
+                    .catch(e => document.getElementById('visitCount').innerText = "Err");
+            }
+            setTimeout(() => { clickCount = 0; }, 2000); 
+        }
+
+        function runUnitTests() {
+            const out = document.getElementById('testOutput');
+            out.innerHTML = "ENGINE PROJECTION TESTS:<br>";
+            const tests = [
+                { i: "1571000 5178500", label: "NZTM -> DDD", expected: -43.54 },
+                { i: "-43.54, 172.64", label: "DDD -> NZTM", expected: 1571000 }
+            ];
+            tests.forEach(test => {
+                const res = flexibleParse(test.i);
+                const val = test.label.includes("DDD") ? res.lat : latLonToNZTM(res.lat, res.lon).e;
+                const pass = Math.abs(val - test.expected) < 5; // allow small variance for Redfearn translation
+                out.innerHTML += `${pass ? '✅' : '❌'} ${test.label} | Res: ${val.toFixed(2)}<br>`;
+            });
         }
     </script>
 </body>

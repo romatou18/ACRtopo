@@ -41,10 +41,9 @@ DDD: -43.54, 172.64
 DMS: S43°32'24, E172°38'24 
 DDM: S43 32.4S, E172 38.4
 NZTM: 1571000, 5178500"
-
-                class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4 text-sm"></textarea>
+                class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-2 text-sm"></textarea>
             
-            <div class="grid grid-cols-4 gap-2 mb-4">
+            <div class="grid grid-cols-4 gap-2">
                 <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
                     Generate Report
                 </button>
@@ -171,6 +170,20 @@ NZTM: 1571000, 5178500"
             
             return { e: Math.round(E), n: Math.round(N) };
         }
+         /**
+         * NZ TOPO50 SHEET CALCULATOR
+         * Determines the map sheet (e.g., BX24) for radio grid refs.
+         */
+        function getTopo50Sheet(e, n) {
+            const rows = ["AS","AT","AU","AV","AW","AX","AY","AZ","BA","BB","BC","BD","BE","BF","BG","BH","BI","BJ","BK","BL","BM","BN","BO","BP","BQ","BR","BS","BT","BU","BV","BW","BX","BY","BZ","CA","CB","CC","CD"];
+            // NZTM Origin for BX24 region approx 1,500,000 / 5,100,000
+            // This is a simplified grid math for the NZTM map index
+            const rowIdx = Math.floor((6000000 - n) / 36000); 
+            const colIdx = Math.floor((e - 1000000) / 24000) + 1;
+            const rowLetter = rows[rowIdx] || "??";
+            const colNumber = colIdx.toString().padStart(2, '0');
+            return `${rowLetter}${colNumber}`;
+        }
 
         // ------------------------------------------------------------------
         // 3. SEGMENTED PARSER 
@@ -215,6 +228,7 @@ NZTM: 1571000, 5178500"
                 targetLng = res.lon;
                 
                 const nztm = latLonToNZTM(targetLat, targetLng);
+		const sheet = getTopo50Sheet(nztm.e, nztm.n);
                 const gE = Math.floor((nztm.e % 100000) / 100).toString().padStart(3, '0');
                 const gN = Math.floor((nztm.n % 100000) / 100).toString().padStart(3, '0');
 
@@ -247,8 +261,8 @@ NZTM: 1571000, 5178500"
 TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
 ALT   :   ${alti}${vectorReport}
 
---RADIO GRID:
-REF   :   ${gE} ${gN} (Topo50)
+--Topo50 GRID Ref+Sheet (For Radio comms):
+SHEET: ${sheet}  REF: ${gE} ${gN}
 
 --COORDINATES:
 NZTM  :   E${nztm.e} N${nztm.n}

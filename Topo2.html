@@ -36,10 +36,12 @@
         
         <div class="no-print">
             <textarea id="combinedInput" rows="3" 
-                placeholder="Paste any format:
-NZTM: 1571000 5178500
+                placeholder="Paste any format e.g.
 DDD: -43.54, 172.64
-DMS: S43°32'24 E172°38'24" 
+DMS: S43°32'24 E172°38'24 
+DDM: 43 32.4 S 172 38.4 E
+NZTM: 1571000 5178500"
+
                 class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-4 text-sm"></textarea>
             
             <div class="grid grid-cols-4 gap-2 mb-4">
@@ -260,15 +262,15 @@ DMS: S43°32'24 E172°38'24"
 ----------------------
 GENERATED: ${timeStr}
 --ALTITUDE: ${alti}${vector}
-
---GRID (Radio Comms):
+--GRID (NZ Topo50):
 SHEET: ${sheet}  REF: ${gridE} ${gridN}
 
 --COORDINATES:
-NZTM2000: E${nztm.e} N${nztm.n}
 DDD: ${latF}, ${lngF}
 DMS: ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
 DDM: ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
+NZTM2000: E${nztm.e} N${nztm.n}
+
 
 --LINKS:
 NZ TOPO:  https://topomap.co.nz?v=2&ll=${latF},${lngF}&z=15

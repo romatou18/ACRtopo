@@ -228,7 +228,7 @@ NZTM: 1571000, 5178500"
                 targetLng = res.lon;
                 
                 const nztm = latLonToNZTM(targetLat, targetLng);
-		const sheet = getTopo50Sheet(nztm.e, nztm.n);
+                const sheet = getTopo50Sheet(nztm.e, nztm.n);
                 const gE = Math.floor((nztm.e % 100000) / 100).toString().padStart(3, '0');
                 const gN = Math.floor((nztm.n % 100000) / 100).toString().padStart(3, '0');
 
@@ -255,19 +255,21 @@ NZTM: 1571000, 5178500"
                 } catch(e) {
                     alti = "Offline";
                 }
+                
                 // Define latF and lngF here to fix the "Undefined" error
                 const latF = targetLat.toFixed(6);
                 const lngF = targetLng.toFixed(6);
 
 
-		// Generate URLs
+                // Generate URLs
                 const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
                 // const topoAppUrl = `topo50map://map?lat=${latF}&lon=${lngF}`;
-                const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+                const googleUrl = `http://googleusercontent.com/maps.google.com/q=${latF},${lngF}`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
                 const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
                 const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
                 const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
+                
                 const report = `ARC LOCATION REPORT
 ----------------------
 TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
@@ -291,11 +293,11 @@ YR.no:   ${yrNoUrl}`;
 
                 document.getElementById('reportContent').innerText = report;
                 
-                document.getElementById('topoLink').href = ${topoUrl};
-                document.getElementById('googleLink').href = ${googleUrl};
-                document.getElementById('earthLink').href = ${earthUrl};
-                document.getElementById('windyLinkBtn').href = ${windyUrl};
-                document.getElementById('yrNoLinkBtn').href = ${yrNoUrl};
+                document.getElementById('topoLink').href = topoUrl;
+                document.getElementById('googleLink').href = googleUrl;
+                document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('windyLinkBtn').href = windyUrl;
+                document.getElementById('yrNoLinkBtn').href = yrNoUrl;
                 
                 document.getElementById('resultArea').classList.remove('hidden');
                 btn.innerText = "Generate Report";
@@ -319,20 +321,45 @@ YR.no:   ${yrNoUrl}`;
             return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}'`;
         }
 
-        // Live GPS Tracking for accurate Vector reporting
+        // Live GPS Tracking with Mobile/PC detection and 3-second timeout
         function initGPS() { 
             const statusBox = document.getElementById('gpsStatus');
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            // Skip GPS usage on PC completely
+            if (!isMobile) {
+                statusBox.innerHTML = `<span class="text-slate-500">● PC Detected: GPS Vector Disabled</span>`;
+                return;
+            }
+
             if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(
+                statusBox.innerHTML = `GPS: Acquiring satellite lock (3s max)...`;
+                
+                // Attempt a quick 3-second check on mobile
+                navigator.geolocation.getCurrentPosition(
                     (pos) => { 
                         myLat = pos.coords.latitude; 
                         myLng = pos.coords.longitude; 
                         statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(pos.coords.accuracy)}m)</span>`;
+                        
+                        // If successful, switch to watchPosition to keep coordinates current
+                        navigator.geolocation.watchPosition(
+                            (wPos) => {
+                                myLat = wPos.coords.latitude; 
+                                myLng = wPos.coords.longitude;
+                                statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(wPos.coords.accuracy)}m)</span>`;
+                            },
+                            (err) => {}, // Ignore further minor drops
+                            {enableHighAccuracy: true, maximumAge: 5000, timeout: 10000}
+                        );
                     }, 
                     (err) => {
-                        statusBox.innerHTML = `<span class="text-red-500">● GPS Error: ${err.message}</span>`;
+                        // Timeout hit or permission denied
+                        statusBox.innerHTML = `<span class="text-amber-500">● GPS Timeout/No Fix. Vector skipped.</span>`;
+                        myLat = null;
+                        myLng = null;
                     }, 
-                    {enableHighAccuracy: true, maximumAge: 5000, timeout: 10000}
+                    {enableHighAccuracy: true, timeout: 3000, maximumAge: 0}
                 ); 
             } else {
                 statusBox.innerHTML = `<span class="text-red-500">● GPS Not Supported</span>`;
@@ -340,8 +367,14 @@ YR.no:   ${yrNoUrl}`;
         }
 
         function getCurrentLocation() { 
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            
+            if (!isMobile) {
+                alert("GPS is disabled on PC. Please type coordinates manually.");
+                return;
+            }
             if(!myLat || !myLng) {
-                alert("Still acquiring GPS... please wait a moment.");
+                alert("No GPS fix acquired. The vector/location features will be skipped.");
                 return;
             }
             document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`; 

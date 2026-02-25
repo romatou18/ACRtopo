@@ -70,11 +70,11 @@ NZTM: 1571000, 5178500"
         <div id="resultArea" class="mt-4 hidden space-y-4">
             
             <div class="grid grid-cols-4 gap-2 no-print">
-                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold text-[9px] text-center">Topo (web)</a>
+                <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold text-[9px] text-center">NZ Topo50</a>
                 <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-2 rounded-lg font-bold text-[9px] text-center">G Maps</a>
                 <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-2 rounded-lg font-bold text-[9px] text-center">G Earth</a>
-                <a id="windyLinkBtn" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-2 rounded-lg font-bold text-[9px] text-center">Windy</a>
-                <a id="yrNoLinkBtn" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-2 rounded-lg font-bold text-[9px] text-center">Yr.no</a>
+                <a id="windyLinkBtn" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-2 rounded-lg font-bold text-[9px] text-center">Windy.com Wx</a>
+                <a id="yrNoLinkBtn" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-2 rounded-lg font-bold text-[9px] text-center">Yr.no Wx</a>
                 <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-2 rounded-lg font-bold text-[9px] text-center">Wx Radar</a>
             </div>
 
@@ -255,7 +255,8 @@ NZTM: 1571000, 5178500"
                 } catch(e) {
                     alti = "Offline";
                 }
-
+		const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
                 const report = `ARC LOCATION REPORT
 ----------------------
 TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
@@ -265,17 +266,17 @@ ALT   :   ${alti}${vectorReport}
 SHEET: ${sheet}  REF: ${gE} ${gN}
 
 --COORDINATES:
-NZTM  :   E${nztm.e} N${nztm.n}
+NZTM2000  :   E${nztm.e} N${nztm.n}
 DDD   :   ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
 DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
 DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
 
 --LINKS:
-NZ TOPO : https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15
-G.MAPS  : http://googleusercontent.com/maps.google.com/q=${targetLat.toFixed(6)},${targetLng.toFixed(6)}
-G.EARTH : https://earth.google.com/web/search/${targetLat.toFixed(6)},${targetLng.toFixed(6)}
-WINDY   : https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
-YR.NO   : https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+NZ TOPO: https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15
+G.Maps:   ${googleUrl}
+G.Earth:  ${earthUrl}
+WINDY.com:   https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
+YR.no:   https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
 
                 document.getElementById('reportContent').innerText = report;
                 

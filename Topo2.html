@@ -244,7 +244,7 @@ NZTM: 1571000, 5178500"
                     const gridBrg = (Math.atan2(y_v, x_v) * 180 / Math.PI + 360) % 360;
                     const magBrg = (gridBrg - MAG_DEC + 360) % 360;
                     
-                    vectorReport = `\nVECTOR:   ${dist}km from you\nBRG   :   ${Math.round(gridBrg)}°T | ${Math.round(magBrg)}°M`;
+                    vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination)`;
                 }
 
                 let alti = "Checking...";
@@ -333,7 +333,7 @@ YR.no:   ${yrNoUrl}`;
             }
 
             if (navigator.geolocation) {
-                statusBox.innerHTML = `GPS: Acquiring satellite lock (3s max)...`;
+                statusBox.innerHTML = `GPS: Acquiring satellite lock (5s max)...`;
                 
                 // Attempt a quick 3-second check on mobile
                 navigator.geolocation.getCurrentPosition(
@@ -359,7 +359,7 @@ YR.no:   ${yrNoUrl}`;
                         myLat = null;
                         myLng = null;
                     }, 
-                    {enableHighAccuracy: true, timeout: 3000, maximumAge: 0}
+                    {enableHighAccuracy: true, timeout: 5000, maximumAge: 0}
                 ); 
             } else {
                 statusBox.innerHTML = `<span class="text-red-500">● GPS Not Supported</span>`;

@@ -180,14 +180,13 @@ NZTM: 1571000, 5178500"
         }
 
         function latLonToNZTM(lat, lon) {
-            const phi = lat * Math.PI / 180;
-            const lambda = lon * Math.PI / 180;
+            const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180, lam0 = NZTM.lambdazero * Math.PI / 180;
             const esq = 2 * NZTM.f - NZTM.f ** 2;
-            const nu = NZTM.a / Math.sqrt(1 - esq * Math.sin(phi) ** 2);
-            const m = NZTM.a * ((1 - esq / 4) * phi - (3 * esq / 8) * Math.sin(2 * phi));
-            const w = lambda - NZTM.lambdazero * Math.PI / 180;
-            const E = NZTM.Ezero + NZTM.kzero * nu * w * Math.cos(phi);
-            const N = NZTM.Nzero + NZTM.kzero * (m + nu * Math.tan(phi) * w ** 2 * Math.cos(phi) ** 2 / 2);
+            const nu = NZTM.a / Math.sqrt(1 - esq * Math.sin(phi)**2);
+            const m = NZTM.a * ((1 - esq/4 - 3*esq*esq/64) * phi - (3*esq/8 + 3*esq*esq/32) * Math.sin(2*phi) + (15*esq*esq/256) * Math.sin(4*phi));
+            const w = lam - lam0;
+            const N = NZTM.Nzero + NZTM.kzero * (m + nu * Math.tan(phi) * w * w * Math.cos(phi)**2 / 2);
+            const E = NZTM.Ezero + NZTM.kzero * (nu * w * Math.cos(phi) + nu * w ** 3 / 6 * Math.cos(phi)**3 * (nu/(NZTM.a*(1-esq)/Math.pow(1-esq*Math.sin(phi)**2, 1.5)) - Math.tan(phi)**2));
             return { e: Math.round(E), n: Math.round(N) };
         }
 

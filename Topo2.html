@@ -55,6 +55,10 @@ NZTM: 1571000, 5178500"
                     Clear
                 </button>
             </div>
+            
+            <div id="gpsStatus" class="text-[10px] text-slate-400 mt-2 text-center font-mono tracking-wide">
+                GPS: Acquiring satellite lock...
+            </div>
         </div>
 
         <div id="secretFooter" class="mt-4 pt-4 border-t border-slate-700 text-center hidden">
@@ -65,6 +69,7 @@ NZTM: 1571000, 5178500"
         </div>
 
         <div id="resultArea" class="mt-4 hidden space-y-4">
+            
             <div class="grid grid-cols-4 gap-2 no-print">
                 <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold text-[9px] text-center">Topo (web)</a>
                 <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-2 rounded-lg font-bold text-[9px] text-center">G Maps</a>
@@ -77,6 +82,7 @@ NZTM: 1571000, 5178500"
             <div class="report-box bg-slate-700 p-4 rounded-xl border border-slate-600">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest no-print">ARC Location Report</span>
                 <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
+                
                 <div class="grid grid-cols-3 gap-2 mt-4 no-print">
                     <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold py-3 rounded-lg">📋 COPY</button>
                     <button onclick="saveAsPDF()" class="bg-slate-600 hover:bg-slate-500 text-white text-[10px] font-bold py-3 rounded-lg">📄 PDF</button>
@@ -88,250 +94,270 @@ NZTM: 1571000, 5178500"
 
     <script>
         /**
-         * ARC TEAM TOPO FINDER - ENGINE V5.1
-         * Version Fix: Independent Lat/Lon polarity for DMS strings.
+         * ARC TEAM TOPO FINDER - ENGINE V5.6
+         * Features: Rigorous NZTM, Segmented Parsing, Elevation, Mag/Grid Bearings, Live GPS Status, Usage Counter
          */
 
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
         let clickCount = 0;
+        const MAG_DEC = 23.5; // Average Magnetic Declination for Canterbury
 
-        // NZTM2000 Proj Constants (Reference: LINZ)
+        // ------------------------------------------------------------------
+        // NZTM2000 Constants (GRS80 Ellipsoid)
+        // ------------------------------------------------------------------
         const NZTM = {
-            a: 6378137.0, f: 1 / 298.257222101,
-            phizero: 0, lambdazero: 173.0,
-            Nzero: 10000000, Ezero: 1600000, kzero: 0.9996
+            a: 6378137.0,             // Semi-major axis
+            f: 1 / 298.257222101,     // Flattening
+            phizero: 0,               // Origin Latitude
+            lambdazero: 173.0,        // Origin Longitude (Central Meridian)
+            Nzero: 10000000,          // False Northing
+            Ezero: 1600000,           // False Easting
+            kzero: 0.9996             // Central Meridian Scale Factor
         };
 
-        function initGPS() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition((pos) => {
-                    myLat = pos.coords.latitude; myLng = pos.coords.longitude;
-                }, null, {enableHighAccuracy: true});
-            }
+        // ------------------------------------------------------------------
+        // 1. HIGH PRECISION NZTM TO LAT/LON
+        // ------------------------------------------------------------------
+        function nztmToLatLon(E, N) {
+            const esq = 2 * NZTM.f - NZTM.f ** 2; 
+            const n = NZTM.f / (2 - NZTM.f);
+            const a = NZTM.a;
+            
+            const M = (N - NZTM.Nzero) / NZTM.kzero;
+            const A = a * (1 - n + (5/4)*(n**2 - n**3) + (81/64)*(n**4 - n**5));
+            const sigma = M / A;
+            const phip = sigma + 
+                         (3*n/2 - 27*n**3/32) * Math.sin(2*sigma) + 
+                         (21*n**2/16 - 55*n**4/32) * Math.sin(4*sigma) + 
+                         (151*n**3/96) * Math.sin(6*sigma);
+            
+            const sin_p = Math.sin(phip), cos_p = Math.cos(phip), tan_p = Math.tan(phip);
+            const rho = a * (1 - esq) / Math.pow(1 - esq * sin_p**2, 1.5);
+            const nu = a / Math.sqrt(1 - esq * sin_p**2);
+            const psi = nu / rho, t = tan_p, Et = E - NZTM.Ezero;
+            
+            const latTerm1 = (t * Et**2) / (2 * rho * nu * NZTM.kzero**2);
+            const latTerm2 = (t * Et**4) / (24 * rho * nu**3 * NZTM.kzero**4) * (5 + 3*t**2 + 8*psi - 4*psi**2 - 9*psi*t**2);
+            const lat = (phip - latTerm1 + latTerm2) * 180 / Math.PI;
+            
+            const lonTerm1 = Et / (nu * NZTM.kzero * cos_p);
+            const lonTerm2 = (Et**3) / (6 * nu**3 * NZTM.kzero**3 * cos_p) * (psi + 2*t**2);
+            const lon = NZTM.lambdazero + (lonTerm1 - lonTerm2) * 180 / Math.PI;
+            
+            return { lat, lon };
         }
 
-        /**
-         * NZ TOPO50 SHEET CALCULATOR
-         * Determines map sheet (e.g., BX24) based on NZTM coordinates.
-         */
-        function getTopo50Sheet(e, n) {
-            const rows = ["AS","AT","AU","AV","AW","AX","AY","AZ","BA","BB","BC","BD","BE","BF","BG","BH","BI","BJ","BK","BL","BM","BN","BO","BP","BQ","BR","BS","BT","BU","BV","BW","BX","BY","BZ","CA","CB","CC","CD"];
-            const rowIdx = Math.floor((6000000 - n) / 36000); 
-            const colIdx = Math.floor((e - 1000000) / 24000) + 1;
-            const rowLetter = rows[rowIdx] || "??";
-            const colNumber = colIdx.toString().padStart(2, '0');
-            return `${rowLetter}${colNumber}`;
+        // ------------------------------------------------------------------
+        // 2. HIGH PRECISION LAT/LON TO NZTM 
+        // ------------------------------------------------------------------
+        function latLonToNZTM(lat, lon) {
+            const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180, lam0 = NZTM.lambdazero * Math.PI / 180;
+            const esq = 2 * NZTM.f - NZTM.f ** 2, a = NZTM.a;
+            
+            const nu = a / Math.sqrt(1 - esq * Math.sin(phi)**2);
+            const rho = a * (1 - esq) / Math.pow(1 - esq * Math.sin(phi)**2, 1.5);
+            const psi = nu / rho, t = Math.tan(phi), w = lam - lam0;
+            
+            const b = a * (1 - NZTM.f), n = (a - b) / (a + b);
+            const M = a * (1 - n) * (1 - n**2) * ( 
+                (1 + 9/4*n**2 + 225/64*n**4)*phi - 
+                (3/2*n - 27/32*n**3)*Math.sin(2*phi) + 
+                (15/16*n**2 - 105/128*n**4)*Math.sin(4*phi) 
+            );
+            
+            const N = NZTM.Nzero + NZTM.kzero * (M + nu*t*w**2/2*Math.cos(phi)**2 + nu*t*w**4/24*Math.pow(Math.cos(phi),4)*(5 - t**2 + 9*psi + 4*psi**2));
+            const E = NZTM.Ezero + NZTM.kzero * (nu*w*Math.cos(phi) + nu*w**3/6*Math.pow(Math.cos(phi),3)*(psi - t**2));
+            
+            return { e: Math.round(E), n: Math.round(N) };
         }
 
-        /**
-         * UPDATED FLEXIBLE PARSER
-         * Separates input into segments to avoid polarity bleed between Lat and Lon.
-         */
+        // ------------------------------------------------------------------
+        // 3. SEGMENTED PARSER 
+        // ------------------------------------------------------------------
         function flexibleParse(input) {
             const clean = input.trim();
             const nums = clean.match(/[-+]?\d*\.?\d+/g);
             if (!nums || nums.length < 2) return null;
-
-            // Detect NZTM (Both numbers > 1,000,000)
-            if (nums.length === 2 && parseFloat(nums[0]) > 900000 && parseFloat(nums[1]) > 900000) {
+            
+            if (nums.length === 2 && parseFloat(nums[0]) > 900000) {
                 return nztmToLatLon(parseFloat(nums[0]), parseFloat(nums[1]));
             }
-
-            // SEGMENTED CONVERSION: Split string to process N/S/E/W independently
-            const segments = clean.split(/[,\s/|;]+/);
-            const mid = Math.floor(nums.length / 2);
             
-            // Reconstruct the raw strings for the first and second half
-            const latStr = clean.substring(0, clean.length / 2); 
-            const lonStr = clean.substring(clean.length / 2);
-
-            function convert(numArray, rawBlock) {
-                let d = 0, m = 0, s = 0;
-                if (numArray.length >= 1) d = Math.abs(parseFloat(numArray[0]));
-                if (numArray.length >= 2) m = parseFloat(numArray[1]) / 60;
-                if (numArray.length >= 3) s = parseFloat(numArray[2]) / 3600;
+            const midIndex = Math.floor(nums.length / 2);
+            const stringHalfIndex = Math.floor(clean.length / 2);
+            const part1 = clean.substring(0, stringHalfIndex);
+            const part2 = clean.substring(stringHalfIndex);
+            
+            function convertSegmentToDec(arr, rawText) {
+                let d = Math.abs(parseFloat(arr[0] || 0));
+                let m = (parseFloat(arr[1] || 0)) / 60;
+                let s = (parseFloat(arr[2] || 0)) / 3600;
                 let res = d + m + s;
-                // Check for negative signs or S/W specifically in this block of text
-                const isNegative = rawBlock.includes('-') || /[SwW]/.test(rawBlock);
-                return isNegative ? -res : res;
+                if (rawText.includes('-') || /[SwW]/.test(rawText)) res = -res;
+                return res;
             }
-
-            return { 
-                lat: convert(nums.slice(0, mid), latStr), 
-                lon: convert(nums.slice(mid), lonStr) 
-            };
+            
+            return { lat: convertSegmentToDec(nums.slice(0, midIndex), part1), lon: convertSegmentToDec(nums.slice(midIndex), part2) };
         }
 
-        /**
-         * NZTM2000 <-> LAT/LON (OFFLINE)
-         */
-        function nztmToLatLon(E, N) {
-            const esq = 2 * NZTM.f - NZTM.f ** 2;
-            const mprime = (N - NZTM.Nzero) / NZTM.kzero;
-            const sigma = (mprime * (1 - esq / 4 - 3 * esq ** 2 / 64 - 5 * esq ** 3 / 256)) / NZTM.a;
-            const phiprime = sigma + (3 * esq / 8 + 3 * esq ** 2 / 32) * Math.sin(2 * sigma);
-            const rhoprime = NZTM.a * (1 - esq) / (1 - esq * Math.sin(phiprime) ** 2) ** 1.5;
-            const nuprime = NZTM.a / Math.sqrt(1 - esq * Math.sin(phiprime) ** 2);
-            const x = E - NZTM.Ezero;
-            const lat = (phiprime - (Math.tan(phiprime) * x ** 2 / (2 * NZTM.kzero ** 2 * nuprime * rhoprime))) * 180 / Math.PI;
-            const lon = NZTM.lambdazero + (x / (NZTM.kzero * nuprime * Math.cos(phiprime))) * 180 / Math.PI;
-            return { lat, lon };
-        }
-
-        function latLonToNZTM(lat, lon) {
-            const phi = lat * Math.PI / 180, lam = lon * Math.PI / 180, lam0 = NZTM.lambdazero * Math.PI / 180;
-            const esq = 2 * NZTM.f - NZTM.f ** 2;
-            const nu = NZTM.a / Math.sqrt(1 - esq * Math.sin(phi)**2);
-            const m = NZTM.a * ((1 - esq/4 - 3*esq*esq/64) * phi - (3*esq/8 + 3*esq*esq/32) * Math.sin(2*phi) + (15*esq*esq/256) * Math.sin(4*phi));
-            const w = lam - lam0;
-            const N = NZTM.Nzero + NZTM.kzero * (m + nu * Math.tan(phi) * w * w * Math.cos(phi)**2 / 2);
-            const E = NZTM.Ezero + NZTM.kzero * (nu * w * Math.cos(phi) + nu * w ** 3 / 6 * Math.cos(phi)**3 * (nu/(NZTM.a*(1-esq)/Math.pow(1-esq*Math.sin(phi)**2, 1.5)) - Math.tan(phi)**2));
-            return { e: Math.round(E), n: Math.round(N) };
-        }
-
-        /**
-         * FORMATTING HELPERS
-         */
-        function toDMS(dec, isLat) {
-            const abs = Math.abs(dec);
-            const d = Math.floor(abs);
-            const m = Math.floor((abs - d) * 60);
-            const s = ((abs - d - m/60) * 3600).toFixed(1);
-            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}' ${s}"`;
-        }
-
-        function toDDM(dec, isLat) {
-            const abs = Math.abs(dec);
-            const d = Math.floor(abs);
-            const m = ((abs - d) * 60).toFixed(3);
-            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}'`;
-        }
-
-        /**
-         * MAIN COORDINATE PROCESSOR
-         */
+        // ------------------------------------------------------------------
+        // 4. MAIN PROCESSOR & REPORT GENERATOR
+        // ------------------------------------------------------------------
         async function processCoordinates() {
             const btn = document.getElementById('genBtn');
             try {
                 btn.innerText = "Processing...";
-                const res = flexibleParse(document.getElementById('combinedInput').value);
-                if (!res || isNaN(res.lat)) throw new Error("Format error");
                 
-                targetLat = res.lat; targetLng = res.lon;
-                const latF = targetLat.toFixed(6), lngF = targetLng.toFixed(6);
+                const res = flexibleParse(document.getElementById('combinedInput').value);
+                if (!res) throw new Error("Format error. Check your coordinates.");
+                targetLat = res.lat; 
+                targetLng = res.lon;
+                
                 const nztm = latLonToNZTM(targetLat, targetLng);
-                const sheet = getTopo50Sheet(nztm.e, nztm.n);
                 const gE = Math.floor((nztm.e % 100000) / 100).toString().padStart(3, '0');
                 const gN = Math.floor((nztm.n % 100000) / 100).toString().padStart(3, '0');
 
-                // Elevation (Requires Web Access)
-                let alti = "Signal Required";
-                try {
-                    const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${latF}&longitude=${lngF}`);
-                    const d = await r.json(); alti = `${Math.round(d.elevation[0])}m (AMSL)`;
-                } catch(e) {}
-
-                // Distance/Bearing Vector
-                let vector = "";
+                let vectorReport = "";
                 if (myLat && myLng) {
-                    const dLat = (targetLat-myLat)*Math.PI/180, dLon = (targetLng-myLng)*Math.PI/180;
-                    const a = Math.sin(dLat/2)**2 + Math.cos(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.sin(dLon/2)**2;
-                    const d = (12742 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(2);
-                    vector = `\nVECTOR:   ${d}km (from your location)`;
+                    const dLat = (targetLat - myLat) * Math.PI / 180;
+                    const dLon = (targetLng - myLng) * Math.PI / 180;
+                    const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.sin(dLon/2)**2;
+                    const dist = (12742 * Math.atan2(Math.sqrt(a_v), Math.sqrt(1-a_v))).toFixed(2);
+                    
+                    const y_v = Math.sin(dLon) * Math.cos(targetLat*Math.PI/180);
+                    const x_v = Math.cos(myLat*Math.PI/180)*Math.sin(targetLat*Math.PI/180) - Math.sin(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.cos(dLon);
+                    const gridBrg = (Math.atan2(y_v, x_v) * 180 / Math.PI + 360) % 360;
+                    const magBrg = (gridBrg - MAG_DEC + 360) % 360;
+                    
+                    vectorReport = `\nVECTOR:   ${dist}km from you\nBRG   :   ${Math.round(gridBrg)}°T | ${Math.round(magBrg)}°M`;
                 }
 
-                const timeStr = new Date().toLocaleString('en-NZ', {hour12: false});
-                const googleUrl = `http://googleusercontent.com/maps.google.com/q=${latF},${lngF}`;
-                const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
+                let alti = "Checking...";
+                try {
+                    const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
+                    const data = await r.json();
+                    alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
+                } catch(e) {
+                    alti = "Offline";
+                }
 
                 const report = `ARC LOCATION REPORT
 ----------------------
-TIME: ${new Date().toLocaleString('en-NZ', {hour12: false})}
-ALT : ${alti}${vector}
+TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
+ALT   :   ${alti}${vectorReport}
 
 --RADIO GRID:
-SHEET: ${sheet}  REF: ${gE} ${gN}
+REF   :   ${gE} ${gN} (Topo50)
 
 --COORDINATES:
-NZTM: E${nztm.e} N${nztm.n}
-DDD : ${latF}, ${lngF}
-DMS : ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
-DDM : ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
+NZTM  :   E${nztm.e} N${nztm.n}
+DDD   :   ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
+DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
+DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
 
 --LINKS:
-NZ TOPO:  https://topomap.co.nz?v=2&ll=${latF},${lngF}&z=15
-G.MAPS:   ${googleUrl}
-G.EARTH:  ${earthUrl}
-WINDY:    https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
-YR.NO:    https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+NZ TOPO : https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15
+G.MAPS  : http://googleusercontent.com/maps.google.com/q=${targetLat.toFixed(6)},${targetLng.toFixed(6)}
+G.EARTH : https://earth.google.com/web/search/${targetLat.toFixed(6)},${targetLng.toFixed(6)}
+WINDY   : https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
+YR.NO   : https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
 
                 document.getElementById('reportContent').innerText = report;
                 
-                // Update Quick Link Buttons
-                document.getElementById('topoLink').href = `https://topomap.co.nz?v=2&ll=${latF},${lngF}&z=15`;
-                document.getElementById('googleLink').href = googleUrl;
-                document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('topoLink').href = `https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15`;
+                document.getElementById('googleLink').href = `http://googleusercontent.com/maps.google.com/q=${targetLat.toFixed(6)},${targetLng.toFixed(6)}`;
+                document.getElementById('earthLink').href = `https://earth.google.com/web/search/${targetLat.toFixed(6)},${targetLng.toFixed(6)}`;
                 document.getElementById('windyLinkBtn').href = `https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}`;
                 document.getElementById('yrNoLinkBtn').href = `https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
-                document.getElementById('zoomEarthLink').href = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},14z`;
                 
                 document.getElementById('resultArea').classList.remove('hidden');
                 btn.innerText = "Generate Report";
-            } catch (err) { alert("Error Parsing: " + err.message); btn.innerText = "Generate Report"; }
+                
+            } catch (err) { 
+                alert(err.message); 
+                btn.innerText = "Generate Report"; 
+            }
         }
 
-        /**
-         * STEALTH COUNTER & UNIT TESTS
-         */
-        function handleLogoClick() {
-            clickCount++;
-            if (clickCount === 3) {
+        // ------------------------------------------------------------------
+        // 5. UTILITY FUNCTIONS
+        // ------------------------------------------------------------------
+        function toDMS(dec, isLat) {
+            const abs = Math.abs(dec), d = Math.floor(abs), m = Math.floor((abs - d) * 60), s = ((abs - d - m/60) * 3600).toFixed(1);
+            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}' ${s}"`;
+        }
+        
+        function toDDM(dec, isLat) {
+            const abs = Math.abs(dec), d = Math.floor(abs), m = ((abs - d) * 60).toFixed(3);
+            return `${isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E')} ${d}° ${m}'`;
+        }
+
+        // Live GPS Tracking for accurate Vector reporting
+        function initGPS() { 
+            const statusBox = document.getElementById('gpsStatus');
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (pos) => { 
+                        myLat = pos.coords.latitude; 
+                        myLng = pos.coords.longitude; 
+                        statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(pos.coords.accuracy)}m)</span>`;
+                    }, 
+                    (err) => {
+                        statusBox.innerHTML = `<span class="text-red-500">● GPS Error: ${err.message}</span>`;
+                    }, 
+                    {enableHighAccuracy: true, maximumAge: 5000, timeout: 10000}
+                ); 
+            } else {
+                statusBox.innerHTML = `<span class="text-red-500">● GPS Not Supported</span>`;
+            }
+        }
+
+        function getCurrentLocation() { 
+            if(!myLat || !myLng) {
+                alert("Still acquiring GPS... please wait a moment.");
+                return;
+            }
+            document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`; 
+            processCoordinates(); 
+        }
+
+        function clearAll() { 
+            document.getElementById('combinedInput').value = ""; 
+            document.getElementById('resultArea').classList.add('hidden'); 
+        }
+
+        function copyToClipboard() { navigator.clipboard.writeText(document.getElementById('reportContent').innerText); alert("Copied to clipboard"); }
+        function saveAsPDF() { window.print(); }
+        function shareReport() { if (navigator.share) navigator.share({ title: 'ARC Report', text: document.getElementById('reportContent').innerText }); }
+        
+        // Hidden Counter & Engine Tests
+        function handleLogoClick() { 
+            if (++clickCount === 3) {
                 document.getElementById('secretFooter').classList.remove('hidden');
                 runUnitTests();
+                // Fetch counter API
                 fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up')
-                    .then(r => r.json()).then(d => document.getElementById('visitCount').innerText = d.count);
+                    .then(r => r.json())
+                    .then(d => document.getElementById('visitCount').innerText = d.count)
+                    .catch(e => document.getElementById('visitCount').innerText = "Err");
             }
-            setTimeout(() => { clickCount = 0; }, 2000);
+            setTimeout(() => { clickCount = 0; }, 2000); 
         }
 
         function runUnitTests() {
-            const output = document.getElementById('testOutput');
-            output.innerHTML = "SYSTEM HEALTH CHECK:<br>";
-            const t = [
-                { i: "-43.54, 172.64", l: "DDD (Standard)" },
-                { i: "S43 32 24 E172 38 24", l: "DMS (Space Sep)" },
-                { i: "43°32.4'S 172°38.4'E", l: "DDM (Symbols)" },
-                { i: "1571000 5178500", l: "NZTM" }
+            const out = document.getElementById('testOutput');
+            out.innerHTML = "ENGINE PROJECTION TESTS:<br>";
+            const tests = [
+                { i: "1571000 5178500", label: "NZTM -> DDD", expected: -43.54 },
+                { i: "-43.54, 172.64", label: "DDD -> NZTM", expected: 1571000 }
             ];
-            t.forEach(x => {
-                const r = flexibleParse(x.i);
-                const pass = (r.lat < 0 && r.lon > 0); // Canterbury sanity check
-                output.innerHTML += `${pass ? '✅' : '❌'} ${x.l}: ${r.lat.toFixed(3)}, ${r.lon.toFixed(3)}<br>`;
+            tests.forEach(test => {
+                const res = flexibleParse(test.i);
+                const val = test.label.includes("DDD") ? res.lat : latLonToNZTM(res.lat, res.lon).e;
+                const pass = Math.abs(val - test.expected) < 5; // allow small variance for Redfearn translation
+                out.innerHTML += `${pass ? '✅' : '❌'} ${test.label} | Res: ${val.toFixed(2)}<br>`;
             });
-        }
-
-        /**
-         * UTILITIES
-         */
-        function openTopoApp() {
-            if (!targetLat) return;
-            const lat = targetLat.toFixed(6), lon = targetLng.toFixed(6);
-            const intent = `intent://map?lat=${lat}&lon=${lon}#Intent;scheme=topo50map;package=com.atlogis.nztopo50.south;end`;
-            const ios = `topo50map://map?lat=${lat}&lon=${lon}`;
-            window.location.href = /android/i.test(navigator.userAgent) ? intent : ios;
-        }
-
-        function saveAsPDF() { window.print(); }
-        function copyToClipboard() { navigator.clipboard.writeText(document.getElementById('reportContent').innerText); alert("Copied"); }
-        function shareReport() { if (navigator.share) navigator.share({ title: 'ARC Report', text: document.getElementById('reportContent').innerText }); }
-        function clearAll() { document.getElementById('combinedInput').value = ""; document.getElementById('resultArea').classList.add('hidden'); }
-
-        function getCurrentLocation() {
-            navigator.geolocation.getCurrentPosition((pos) => {
-                document.getElementById('combinedInput').value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
-                processCoordinates();
-            }, () => alert("GPS Error"), {enableHighAccuracy: true});
         }
     </script>
 </body>

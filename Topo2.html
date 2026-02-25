@@ -255,6 +255,9 @@ NZTM: 1571000, 5178500"
                 } catch(e) {
                     alti = "Offline";
                 }
+                // Define latF and lngF here to fix the "Undefined" error
+                const latF = targetLat.toFixed(6);
+                const lngF = targetLng.toFixed(6);
 		const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
                 const report = `ARC LOCATION REPORT

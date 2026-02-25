@@ -258,8 +258,16 @@ NZTM: 1571000, 5178500"
                 // Define latF and lngF here to fix the "Undefined" error
                 const latF = targetLat.toFixed(6);
                 const lngF = targetLng.toFixed(6);
-		const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+
+
+		// Generate URLs
+                const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
+                // const topoAppUrl = `topo50map://map?lat=${latF}&lon=${lngF}`;
+                const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
+                const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
+                const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
+                const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
                 const report = `ARC LOCATION REPORT
 ----------------------
 TIME  :   ${new Date().toLocaleString('en-NZ', {hour12: false})}
@@ -275,11 +283,11 @@ DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
 DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
 
 --LINKS:
-NZ TOPO: https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15
+NZ TOPO: ${topoUrl}
 G.Maps:   ${googleUrl}
 G.Earth:  ${earthUrl}
-WINDY.com:   https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
-YR.no:   https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+WINDY.com:${windyUrl}
+YR.no:   ${yrNoUrl}`;
 
                 document.getElementById('reportContent').innerText = report;
                 

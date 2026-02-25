@@ -69,7 +69,7 @@ DMS: S43°31'12 E172°37'48"
                 <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-3 rounded-lg font-bold text-[10px] text-center border border-blue-400/30">Live Wx RADAR</a>
                 <a id="windyLink" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-3 rounded-lg font-bold text-[10px] text-center">Windy.com SPOT</a>
                 <a id="yrNoLink" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-3 rounded-lg font-bold text-[10px] text-center">Yr.no 5days</a>
-	    </div>
+            </div>
 
             <div class="report-box bg-slate-700 p-4 rounded-xl border border-slate-600">
                 <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest no-print">ARC Location Report</span>
@@ -93,8 +93,7 @@ DMS: S43°31'12 E172°37'48"
     <script>
         /**
          * ARC TEAM TOPO FINDER - CORE LOGIC
-         * Author: Gemini Adaptive AI
-         * Version: 4.0 (Canterbury Rescue Build)
+         * Version: 4.1 (Fix: LatF Undefined)
          */
         // --- STEALTH COUNTER LOGIC ---
         let clickCount = 0;
@@ -246,6 +245,10 @@ DMS: S43°31'12 E172°37'48"
                 if (!res) throw new Error("Invalid Input");
                 targetLat = res.lat; targetLng = res.lon;
 
+                // Define latF and lngF here to fix the "Undefined" error
+                const latF = targetLat.toFixed(6);
+                const lngF = targetLng.toFixed(6);
+
                 const nztm = latLonToNZTM(targetLat, targetLng);
                 const sheet = getTopo50Sheet(nztm.e, nztm.n);
                 
@@ -274,10 +277,10 @@ DMS: S43°31'12 E172°37'48"
                     vector = `\nVECTOR:   ${d}km 🧭 ${Math.round(b)}° (from you)`;
                 }
 
-                const time = new Date().toLocaleString('en-NZ', {hour12: false});
-		const timeStr = getNZTimestamp();
-		const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+                const timeStr = getNZTimestamp();
+                const googleUrl = `http://googleusercontent.com/maps.google.com/q=${latF},${lngF}`;
                 const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
+                
                 const report = `ARC LOCATION REPORT
 ----------------------
 GENERATED: ${timeStr}
@@ -288,12 +291,12 @@ SHEET: ${sheet}  REF: ${gridE} ${gridN}
 
 --FULL COORDINATES:
 NZTM2000: E${nztm.e} N${nztm.n}
-DDD: ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
+DDD: ${latF}, ${lngF}
 DMS: ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
 DDM: ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
 
 --LINKS:
-NZ TOPO: https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15
+NZ TOPO: https://topomap.co.nz?v=2&ll=${latF},${lngF}&z=15
 G.Maps:   ${googleUrl}
 G.Earth:  ${earthUrl}
 WINDY.com:   https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}
@@ -301,11 +304,13 @@ YR.no:   https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${tar
 
                 document.getElementById('reportContent').innerText = report;
                 
-                // Update Buttons
-                document.getElementById('topoLink').href = `https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15`;
-                document.getElementById('googleLink').href = `http://googleusercontent.com/maps.google.com/q=${targetLat.toFixed(6)},${targetLng.toFixed(6)}`;
-                document.getElementById('windyLinkBtn').href = `https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}`;
-                document.getElementById('yrNoLinkBtn').href = `https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+                // Update Button Links
+                document.getElementById('topoLink').href = `https://topomap.co.nz?v=2&ll=${latF},${lngF}&z=15`;
+                document.getElementById('googleLink').href = googleUrl;
+                document.getElementById('earthLink').href = earthUrl;
+                document.getElementById('zoomEarthLink').href = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},14z`;
+                document.getElementById('windyLink').href = `https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}`;
+                document.getElementById('yrNoLink').href = `https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
                 
                 document.getElementById('resultArea').classList.remove('hidden');
                 btn.innerText = "Generate Report";

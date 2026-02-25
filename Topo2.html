@@ -291,11 +291,11 @@ YR.no:   ${yrNoUrl}`;
 
                 document.getElementById('reportContent').innerText = report;
                 
-                document.getElementById('topoLink').href = `https://topomap.co.nz?v=2&ll=${targetLat.toFixed(6)},${targetLng.toFixed(6)}&z=15`;
-                document.getElementById('googleLink').href = `http://googleusercontent.com/maps.google.com/q=${targetLat.toFixed(6)},${targetLng.toFixed(6)}`;
-                document.getElementById('earthLink').href = `https://earth.google.com/web/search/${targetLat.toFixed(6)},${targetLng.toFixed(6)}`;
-                document.getElementById('windyLinkBtn').href = `https://www.windy.com/${targetLat.toFixed(4)}/${targetLng.toFixed(4)}`;
-                document.getElementById('yrNoLinkBtn').href = `https://www.yr.no/en/forecast/daily-table/${targetLat.toFixed(4)},${targetLng.toFixed(4)}`;
+                document.getElementById('topoLink').href = ${topoUrl};
+                document.getElementById('googleLink').href = ${googleUrl};
+                document.getElementById('earthLink').href = ${earthUrl};
+                document.getElementById('windyLinkBtn').href = ${windyUrl};
+                document.getElementById('yrNoLinkBtn').href = ${yrNoUrl};
                 
                 document.getElementById('resultArea').classList.remove('hidden');
                 btn.innerText = "Generate Report";

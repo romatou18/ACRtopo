@@ -23,7 +23,7 @@
         #instModal { transition: opacity 0.2s ease-in-out; }
     </style>
 </head>
-<body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS()">
+<body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS(); renderHistory();">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 relative">
         
@@ -38,14 +38,20 @@
         </div>
         
         <div class="no-print">
-            <textarea id="combinedInput" rows="3" 
-                placeholder="Paste any format e.g.
-DDD: -43.54, 172.64
-DMS: S43°32'24, E172°38'24 
-DDM: S43 32.4S, E172 38.4
-NZTM: 1571000, 5178500"
-                class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white mb-2 text-sm"></textarea>
-            
+            <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 mb-2 items-stretch">
+                <textarea id="combinedInput" rows="3" 
+                    placeholder="Paste coordinates here..."
+                    class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white text-sm min-h-0"></textarea>
+            </div>
+            <div class="mb-2">
+                <p id="coordExample" aria-label="Example coordinate formats"
+                    class="w-full p-3 bg-slate-800 border border-slate-600 rounded-xl text-slate-400 text-[11px] font-mono whitespace-pre-wrap">Supported formats:
+                    DDD: -43.54, 172.64
+                    DMS: S43°32'24, E172°38'24 
+                    DDM: S43 32.4S, E172 38.4
+                    NZTM: 1571000, 5178500
+            </p>
+            </div>
             <div class="grid grid-cols-4 gap-2">
                 <button onclick="processCoordinates()" id="genBtn" class="col-span-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
                     Generate Report
@@ -60,6 +66,11 @@ NZTM: 1571000, 5178500"
             
             <div id="gpsStatus" class="text-[10px] text-slate-400 mt-2 text-center font-mono tracking-wide">
                 GPS: Acquiring satellite lock...
+            </div>
+
+            <div class="mt-4 no-print">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">History (last 10 — tap to restore)</h3>
+                <div id="historyList" class="space-y-1 max-h-32 overflow-y-auto rounded-xl border border-slate-600 bg-slate-800/50 p-2" role="list"></div>
             </div>
         </div>
 
@@ -134,6 +145,67 @@ NZTM: 1571000, 5178500"
         let myLat = null, myLng = null;
         let clickCount = 0;
         const MAG_DEC = 23.5; // Average Magnetic Declination for Canterbury
+
+        const ALT_CACHE_KEY = 'arc_alt_cache';
+        const HISTORY_KEY = 'arc_history';
+        const HISTORY_MAX = 10;
+
+        function altCacheKey(lat, lng) {
+            return `${Number(lat).toFixed(4)}_${Number(lng).toFixed(4)}`;
+        }
+        function getAltFromCache(lat, lng) {
+            try {
+                const raw = localStorage.getItem(ALT_CACHE_KEY);
+                if (!raw) return null;
+                const obj = JSON.parse(raw);
+                return obj[altCacheKey(lat, lng)] ?? null;
+            } catch (e) { return null; }
+        }
+        function setAltCache(lat, lng, altiStr) {
+            try {
+                const raw = localStorage.getItem(ALT_CACHE_KEY) || '{}';
+                const obj = JSON.parse(raw);
+                obj[altCacheKey(lat, lng)] = altiStr;
+                localStorage.setItem(ALT_CACHE_KEY, JSON.stringify(obj));
+            } catch (e) {}
+        }
+        function getHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch (e) { return []; }
+        }
+        function addToHistory(entry) {
+            let list = getHistory();
+            list = [entry].concat(list.filter(e => altCacheKey(e.lat, e.lng) !== altCacheKey(entry.lat, entry.lng)));
+            list = list.slice(0, HISTORY_MAX);
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+            renderHistory();
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function renderHistory() {
+            const list = getHistory();
+            const el = document.getElementById('historyList');
+            if (!el) return;
+            el.innerHTML = list.length === 0
+                ? '<p class="text-slate-500 text-[10px] p-2">No history yet. Generate a report to add entries.</p>'
+                : list.map((e) => {
+                    const ddd = e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
+                    const label = `${ddd} — ${e.alti || '—'}`;
+                    return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-ddd="${escapeHtml(ddd)}" title="Tap to restore">${escapeHtml(label)}</button>`;
+                }).join('');
+            el.querySelectorAll('.history-item').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const ddd = btn.getAttribute('data-ddd');
+                    if (ddd) {
+                        document.getElementById('combinedInput').value = ddd;
+                        processCoordinates();
+                    }
+                });
+            });
+        }
 
         // ------------------------------------------------------------------
         // NZTM2000 Constants (GRS80 Ellipsoid)
@@ -288,16 +360,19 @@ NZTM: 1571000, 5178500"
                     vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid/ True North) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination offset for compass use)`;
                 }
 
-                let alti = "Checking...";
-                try {
-                    const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
-                    const data = await r.json();
-                    alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
-                } catch(e) {
-                    alti = "Offline";
+                let alti = getAltFromCache(targetLat, targetLng);
+                if (alti == null) {
+                    alti = "Checking...";
+                    try {
+                        const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
+                        const data = await r.json();
+                        alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
+                        setAltCache(targetLat, targetLng, alti);
+                    } catch (e) {
+                        alti = "Offline";
+                    }
                 }
-                
-                // Define latF and lngF here to fix the "Undefined" error
+
                 const latF = targetLat.toFixed(6);
                 const lngF = targetLng.toFixed(6);
 
@@ -333,7 +408,9 @@ WINDY.com:${windyUrl}
 YR.no:   ${yrNoUrl}`;
 
                 document.getElementById('reportContent').innerText = report;
-                
+
+                addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}` });
+
                 document.getElementById('topoLink').href = topoUrl;
                 document.getElementById('googleLink').href = googleUrl;
                 document.getElementById('earthLink').href = earthUrl;

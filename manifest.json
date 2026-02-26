@@ -9,12 +9,12 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://acr-topo.netlify.app/Acrlogo.png",
+      "src": "/Acrlogo.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "https://acr-topo.netlify.app/Acrlogo.png",
+      "src": "/Acrlogo.png",
       "sizes": "317x319",
       "type": "image/png"
     }

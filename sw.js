@@ -1,16 +1,19 @@
 // sw.js - ARC Topo Finder Service Worker
+// Field-ready: load once at home, use offline in remote NZ (e.g. rescue missions).
 
-const CACHE_NAME = 'arc-topo-finder-v5.6';
+const CACHE_NAME = 'arc-topo-finder-v5.7';
 
-// Add the core files your app needs to function offline
+// Core files needed for full offline use after one load at home
 const ASSETS_TO_CACHE = [
     '/',
     '/Index.html',
     '/Topo2.html',
     '/Acrlogo.png',
     '/manifest.json',
-    'https://cdn.tailwindcss.com' // Cache Tailwind so the app doesn't lose its styling offline
+    'https://cdn.tailwindcss.com' // Cache Tailwind so styling works offline
 ];
+
+const OFFLINE_FALLBACK = '/Index.html';
 
 // 1. Install Step: Cache the files
 self.addEventListener('install', (event) => {
@@ -44,31 +47,30 @@ self.addEventListener('activate', (event) => {
 // 3. Fetch Step: Intercept network requests
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
+    const isNav = event.request.mode === 'navigate';
 
-    // Ignore external APIs. We want these to fail gracefully so the app's try/catch blocks 
-    // can display "Offline" instead of the Service Worker throwing an error.
+    // Don't intercept external APIs – let app handle "Offline" in try/catch
     if (url.includes('api.open-meteo.com') || url.includes('api.counterapi.dev')) {
-        return; 
+        return;
     }
 
-    // Cache-First Strategy for everything else
     event.respondWith(
         caches.match(event.request)
             .then((cachedResponse) => {
-                // Return the cached version if we have it
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-                
-                // Otherwise, try to fetch it from the network
+                if (cachedResponse) return cachedResponse;
                 return fetch(event.request)
                     .then((networkResponse) => {
-                        // Optionally cache new dynamic requests here, 
-                        // but keeping it static is safer for this tool.
+                        if (networkResponse && networkResponse.ok && event.request.url.startsWith(self.location.origin)) {
+                            const clone = networkResponse.clone();
+                            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+                        }
                         return networkResponse;
                     })
-                    .catch((error) => {
-                        console.error('[Service Worker] Fetch failed; returning offline fallback.', error);
+                    .catch((err) => {
+                        if (isNav) {
+                            return caches.match(OFFLINE_FALLBACK).then((fallback) => fallback || new Response('Offline', { status: 503, statusText: 'Service Unavailable' }));
+                        }
+                        return undefined;
                     });
             })
     );

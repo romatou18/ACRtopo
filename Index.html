@@ -191,16 +191,20 @@
             if (!el) return;
             el.innerHTML = list.length === 0
                 ? '<p class="text-slate-500 text-[10px] p-2">No history yet. Generate a report to add entries.</p>'
-                : list.map((e) => {
-                    const ddd = e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
-                    const label = `${ddd} — ${e.alti || '—'}`;
-                    return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-ddd="${escapeHtml(ddd)}" title="Tap to restore">${escapeHtml(label)}</button>`;
+                : list.map((e, i) => {
+                    const displayCoords = e.originalInput || e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
+                    const labelOneLine = displayCoords.replace(/\s+/g, ' ').trim();
+                    const label = `${labelOneLine} — ${e.alti || '—'}`;
+                    return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-index="${i}" title="Tap to restore">${escapeHtml(label)}</button>`;
                 }).join('');
             el.querySelectorAll('.history-item').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const ddd = btn.getAttribute('data-ddd');
-                    if (ddd) {
-                        document.getElementById('combinedInput').value = ddd;
+                    const i = parseInt(btn.getAttribute('data-index'), 10);
+                    const list = getHistory();
+                    const entry = list[i];
+                    if (entry) {
+                        const toRestore = entry.originalInput != null && entry.originalInput !== '' ? entry.originalInput : (entry.ddd || `${Number(entry.lat).toFixed(6)}, ${Number(entry.lng).toFixed(6)}`);
+                        document.getElementById('combinedInput').value = toRestore;
                         processCoordinates();
                     }
                 });
@@ -330,7 +334,8 @@
             try {
                 btn.innerText = "Processing...";
                 
-                const res = flexibleParse(document.getElementById('combinedInput').value);
+                const rawInput = document.getElementById('combinedInput').value.trim();
+                const res = flexibleParse(rawInput);
                 if (!res) throw new Error("Format error. Check your coordinates.");
                 targetLat = res.lat; 
                 targetLng = res.lon;
@@ -409,7 +414,7 @@ YR.no:   ${yrNoUrl}`;
 
                 document.getElementById('reportContent').innerText = report;
 
-                addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}` });
+                addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: rawInput });
 
                 document.getElementById('topoLink').href = topoUrl;
                 document.getElementById('googleLink').href = googleUrl;

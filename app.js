@@ -173,10 +173,33 @@ const PI_div_180_deg = Math.PI / 180;
 /**
  * Convert NZTM2000 Easting and Northing to WGS84 latitude and longitude (decimal degrees).
  *
- * Implements the inverse transverse Mercator (Redfearn-style):
- * 1. Remove false easting/northing and scale → get (x,y) in projection plane.
- * 2. Compute meridian arc M and footpoint latitude phip from N.
- * 3. Use series in (E - Ezero) to get latitude (phi) and longitude (lam).
+ * HIGH-LEVEL MATH
+ * ---------------
+ * Inverse Transverse Mercator: given projected (E, N) in metres, find (φ, λ) on the
+ * ellipsoid. The forward TM gives N = N₀ + k₀·(M(φ) + …) and E = E₀ + k₀·(…). Inversion:
+ *
+ * 1. Recover meridian arc and easting offset:
+ *      M = (N − N₀) / k₀,    Eₜ = E − E₀.
+ *
+ * 2. Footpoint latitude φ': the latitude whose meridian arc is M; i.e. M(φ') = M.
+ *    Solve by series: φ' = σ + B·sin(2σ) + C·sin(4σ) + D·sin(6σ), with σ = M/A.
+ *    (A is the first-term coefficient from the forward M(φ) series.)
+ *
+ * 3. At φ' compute ν, ρ, ψ = ν/ρ, t = tan φ'. Then:
+ *      φ = φ' − (t·Eₜ²)/(2·ρ·ν·k₀²) + (t·Eₜ⁴)/(24·ρ·ν³·k₀⁴)·(5 + 3t² + 8ψ − 4ψ² − 9ψt²) + …
+ *      λ = λ₀ + (Eₜ)/(ν·k₀·cos φ') − (Eₜ³)/(6·ν³·k₀³·cos φ')·(ψ + 2t²) + …
+ *
+ * So latitude is footpoint minus a series in Eₜ², Eₜ⁴; longitude is λ₀ plus a series in Eₜ, Eₜ³.
+ *
+ * STEPS
+ * --------------------------
+ * 1. Ellipsoid constants: e², third flattening n, semi-major axis a.
+ * 2. Meridian arc from northing: M = (N − N₀)/k₀. Coefficient A for σ = M/A; then
+ *    footpoint φ' = σ + B·sin(2σ) + C·sin(4σ) + D·sin(6σ) (coefficients in n).
+ * 3. At φ': compute ρ, ν, ψ = ν/ρ, t = tan φ', Eₜ = E − E₀.
+ * 4. Latitude: φ = φ' − Eₜ² term + Eₜ⁴ term; convert to degrees.
+ * 5. Longitude: λ = λ₀ + Eₜ term − Eₜ³ term; convert to degrees.
+ * 6. Return { lat: φ°, lon: λ° }.
  *
  * @param {number} E - Easting (metres)
  * @param {number} N - Northing (metres)
@@ -187,27 +210,46 @@ function nztmToLatLon(E, N) {
     const n = NZTM.f / (2 - NZTM.f);
     const a = NZTM.a;
 
-    // Meridian arc M from northing; then footpoint latitude phip via inverse series
+    // -------------------------------------------------------------------------
+    // Step 2: Recover meridian arc M from northing; then footpoint latitude φ'.
+    // M = (N - N₀)/k₀ is the distance along the ellipsoid from equator to the
+    // footpoint. We solve φ' from M(φ') = M using the inverse series.
+    // -------------------------------------------------------------------------
+    // A = first-term coefficient in M(φ) = A·σ + … so that σ ≈ M/A (radians).
+    //    a·(1−n)·(1−n²) times the φ-coefficient (1 + n²/4 + n⁴/64 + …) → 1 - n + (5/4)(n²−n³) + (81/64)(n⁴−n⁵).
     const M = (N - NZTM.Nzero) / NZTM.kzero;
     const A = a * (1 - n + (5/4) * (n**2 - n**3) + (81/64) * (n**4 - n**5));
     const sigma = M / A;
+    // φ' = σ + B·sin(2σ) + C·sin(4σ) + D·sin(6σ). Coefficients (in n) from inverse
+    // meridian arc series: B = 3n/2 − 27n³/32, C = 21n²/16 − 55n⁴/32, D = 151n³/96.
     const phip = sigma +
         (3*n/2 - 27*n**3/32) * Math.sin(2*sigma) +
         (21*n**2/16 - 55*n**4/32) * Math.sin(4*sigma) +
         (151*n**3/96) * Math.sin(6*sigma);
 
-    // Radii and terms for latitude/longitude series
+    // -------------------------------------------------------------------------
+    // Step 3: At footpoint φ', compute radii of curvature and auxiliaries.
+    // Eₜ = easting offset from central meridian (metres).
+    // -------------------------------------------------------------------------
     const sin_p = Math.sin(phip), cos_p = Math.cos(phip), tan_p = Math.tan(phip);
     const rho = a * (1 - esq) / Math.pow(1 - esq * sin_p**2, 1.5);
     const nu = a / Math.sqrt(1 - esq * sin_p**2);
     const psi = nu / rho, t = tan_p, Et = E - NZTM.Ezero;
 
-    // Latitude: phip minus series in Et², Et⁴
+    // -------------------------------------------------------------------------
+    // Step 4: Latitude φ = φ' − (Eₜ² term) + (Eₜ⁴ term).
+    // Eₜ²: (t·Eₜ²)/(2·ρ·ν·k₀²) — main parabolic correction from easting.
+    // Eₜ⁴: (t·Eₜ⁴)/(24·ρ·ν³·k₀⁴)·(5 + 3t² + 8ψ − 4ψ² − 9ψt²) — ellipsoid correction.
+    // -------------------------------------------------------------------------
     const latTerm1 = (t * Et**2) / (2 * rho * nu * NZTM.kzero**2);
     const latTerm2 = (t * Et**4) / (24 * rho * nu**3 * NZTM.kzero**4) * (5 + 3*t**2 + 8*psi - 4*psi**2 - 9*psi*t**2);
     const lat = (phip - latTerm1 + latTerm2) * 180 / Math.PI;
 
-    // Longitude: central meridian plus series in Et, Et³
+    // -------------------------------------------------------------------------
+    // Step 5: Longitude λ = λ₀ + (Eₜ term) − (Eₜ³ term).
+    // Eₜ term: Eₜ/(ν·k₀·cos φ') — arc-to-angle along parallel at φ'.
+    // Eₜ³ term: (Eₜ³)/(6·ν³·k₀³·cos φ')·(ψ + 2t²) — cubic correction for conformality.
+    // -------------------------------------------------------------------------
     const lonTerm1 = Et / (nu * NZTM.kzero * cos_p);
     const lonTerm2 = (Et**3) / (6 * nu**3 * NZTM.kzero**3 * cos_p) * (psi + 2*t**2);
     const lon = NZTM.lambdazero + (lonTerm1 - lonTerm2) * 180 / Math.PI;
@@ -218,18 +260,37 @@ function nztmToLatLon(E, N) {
 /**
  * Convert WGS84 latitude and longitude (decimal degrees) to NZTM2000 Easting and Northing.
  *
- * Forward transverse Mercator (Redfearn-style):
- * 1. Compute meridian arc M(phi), then N = Nzero + k0*(M + series in w², w⁴).
- * 2. E = Ezero + k0*(series in w, w³). Here w = (lon - lon0) in radians.
+ * HIGH-LEVEL MATH
+ * ---------------
+ * Transverse Mercator (TM) projects the ellipsoid onto a cylinder tangent along a
+ * central meridian λ₀. Easting E and Northing N are:
+ *
+ *   E = E₀ + k₀ · [ ν·cos φ · (w + w³/6·(ψ − t²) + …) ]
+ *   N = N₀ + k₀ · [ M(φ) + ν·tan φ·cos² φ · (w²/2 + w⁴/24·(5−t²+9ψ+4ψ²) + …) ]
+ *
+ * where:
+ *   φ, λ = lat/lon (radians);  w = λ − λ₀  (longitude from central meridian)
+ *   M(φ) = meridian arc from equator to φ
+ *   ν = radius of curvature (prime vertical), ρ = radius (meridian), ψ = ν/ρ, t = tan φ
+ *   E₀ = 1,600,000 m, N₀ = 10,000,000 m, k₀ = 0.9996  (NZTM2000 constants)
+ *
+ * STEPS
+ * --------------------------
+ * 1. Convert lat, lon to radians (φ, λ); define w = λ − λ₀.
+ * 2. Compute ellipsoid auxiliaries: e², ν(φ), ρ(φ), ψ = ν/ρ, t = tan φ.
+ * 3. Compute third flattening n and meridian arc M(φ) (series in φ, sin 2φ, sin 4φ).
+ * 4. Northing: N = N₀ + k₀ · (M + ν·t·cos² φ·w²/2 + ν·t·cos⁴ φ·w⁴/24·(5−t²+9ψ+4ψ²)).
+ * 5. Easting:  E = E₀ + k₀ · (ν·cos φ·w + ν·cos³ φ·w³/6·(ψ−t²)).
+ * 6. Return { e: round(E), n: round(N) } in metres.
  *
  * @param {number} lat - Latitude (decimal degrees)
  * @param {number} lon - Longitude (decimal degrees)
  * @returns {{ e: number, n: number }} - Easting and Northing in metres (rounded)
  */
 function latLonToNZTM(lat, lon) {
-    const phi = lat * Math.PI / 180;
-    const lam = lon * Math.PI / 180;
-    const lam0 = NZTM.lambdazero * Math.PI / 180;
+    const phi = lat * PI_div_180_deg;
+    const lam = lon * PI_div_180_deg;
+    const lam0 = NZTM.lambdazero * PI_div_180_deg;
     const esq = 2 * NZTM.f - NZTM.f ** 2;
     const a = NZTM.a;
 
@@ -409,8 +470,8 @@ async function processCoordinates() {
         // Vector (distance + bearing) from current GPS position to target
         let vectorReport = "";
         if (myLat != null && myLng != null) {
-            const dLat = (targetLat - myLat) * Math.PI / 180;
-            const dLon = (targetLng - myLng) * Math.PI / 180;
+            const dLat = (targetLat - myLat) * PI_div_180_deg;
+            const dLon = (targetLng - myLng) * PI_div_180_deg;
             const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*PI_div_180_deg)*Math.cos(targetLat*PI_div_180_deg)*Math.sin(dLon/2)**2;
             const dist = (EarthDiamKm * Math.atan2(Math.sqrt(a_v), Math.sqrt(1 - a_v))).toFixed(2);
 

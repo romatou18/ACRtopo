@@ -51,7 +51,7 @@ NZTM: 1571000, 5178500"
                     Generate Report
                 </button>
                 <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
-                    📍
+                    My location (if available)
                 </button>
                 <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
                     Clear
@@ -93,21 +93,25 @@ NZTM: 1571000, 5178500"
             <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-slate-700 pb-2">ARC Team Instructions</h2>
             <div class="space-y-4 text-sm text-slate-300">
                 <section>
-                    <h3 class="font-bold text-white uppercase text-xs mb-1">1. PWA Installation</h3>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">1. Installation of the app on your mobile</h3>
                     <p>Tap "Share" (iOS) or "Settings" (Android) and select <b>"Add to Home Screen"</b>. This allows full offline use in the field.</p>
                 </section>
                 <section>
-                    <h3 class="font-bold text-white uppercase text-xs mb-1">2. Coordinate Input</h3>
-                    <p>Paste text from Radio logs or InReach. It handles NZTM (E/N), DDD, DMS, and DDM automatically.</p>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">2. Coordinate Input/conversion</h3>
+                    <p>Paste text from Radio logs or InReach. It handles NZTM (E/N), DDD, DMS, and DDM automatically. Converts the input coordinate to the remaining 4 formats
+                        for sharing with the team, Police etc.
+                    </p>
                 </section>
                 <section>
                     <h3 class="font-bold text-white uppercase text-xs mb-1">3. The Vector Feature</h3>
-                    <p>On mobile, the app tries to get a 5-secondd GPS lock. If successful, it calculates the <b>Bearing</b> and <b>Distance</b> from your current location to the target.
-                    Including the offset Magnetic North declination, so that you can use the bearing directly from the app/map to the compass in case!</p>
+                    <p>On mobile, the app tries to get a 5-second GPS lock. If successful, it calculates the <b>Bearing</b> and <b>Distance</b> from your current location to the target.
+                    Including the offset Magnetic North declination, so that you can use the bearing directly from the app/map to the compass in case, and use this app at anytime, provided you
+                    have a GPS fix, and get the right Compass bearing without having to worry about manually offsetting the e.g. 23.5 deg E declination in Canterbury.</p>
                 </section>
                 <section>
                     <h3 class="font-bold text-white uppercase text-xs mb-1">4. Offline Limitations</h3>
-                    <p>Coordinates conversion & NZTM math work 100% offline. However, <b>Altitude</b> and <b>External Maps</b> require active data/satellite link.</p>
+                    <p>Coordinates conversion & NZTM math work 100% offline. However, <b>Altitude</b> and <b>External Maps</b> require active 3G/4G mobile data/satellite link.
+                    <b>Important: Ensure to load up the app at least once on your mobile</b>, it gets saved for later and ensure offline functions will work on your next mission day!</p>
                 </section>
             </div>
             <button onclick="toggleModal(false)" class="mt-6 w-full bg-emerald-600 text-white font-bold py-3 rounded-xl">Got it</button>

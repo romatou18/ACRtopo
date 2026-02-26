@@ -1,0 +1,657 @@
+/**
+ * ARC Team Topo Finder - Main Application Script
+ * -----------------------------------------------
+ * Alpine Rescue Canterbury field tool for coordinate conversion, NZTM2000,
+ * elevation (cached for offline), vector/bearing from GPS, and report generation.
+ * Designed for use on mobile in remote NZ; load once at base, use offline in the field.
+ *
+ * Coordinate systems handled:
+ *   - NZTM2000 (Easting/Northing) - New Zealand Transverse Mercator
+ *   - DDD     - Decimal degrees (e.g. -43.54, 172.64)
+ *   - DMS     - Degrees, minutes, seconds
+ *   - DDM     - Degrees, decimal minutes
+ *
+ * Dependencies: none. Expects DOM elements (combinedInput, genBtn, reportContent, etc.).
+ */
+
+// =============================================================================
+// GLOBAL STATE
+// =============================================================================
+
+/** Target coordinates from last successful parse (lat/lon in decimal degrees). */
+let targetLat = null;
+let targetLng = null;
+
+/** Current device position from GPS (mobile only). Used for vector distance/bearing. */
+let myLat = null;
+let myLng = null;
+
+/** Secret logo click counter for debug panel. */
+let clickCount = 0;
+
+/** Average magnetic declination for Canterbury (degrees East). Used to convert grid bearing to magnetic for compass use. */
+const MAG_DEC = 23.5;
+
+// =============================================================================
+// STORAGE KEYS & CONSTANTS (Altitude cache, History)
+// =============================================================================
+
+const ALT_CACHE_KEY = 'arc_alt_cache';
+const HISTORY_KEY = 'arc_history';
+const HISTORY_MAX = 10;
+
+// -----------------------------------------------------------------------------
+// Altitude cache (localStorage)
+// Keys: "lat_lng" rounded to 4 decimals; values: altitude string e.g. "1234m (AMSL)".
+// Allows offline display of elevation for previously fetched coordinates.
+// -----------------------------------------------------------------------------
+
+/** Build a cache key from lat/lon (4 decimals ≈ 11 m). */
+function altCacheKey(lat, lng) {
+    return `${Number(lat).toFixed(4)}_${Number(lng).toFixed(4)}`;
+}
+
+/** Get cached altitude string for a coordinate, or null if not cached. */
+function getAltFromCache(lat, lng) {
+    try {
+        const raw = localStorage.getItem(ALT_CACHE_KEY);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        return obj[altCacheKey(lat, lng)] ?? null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/** Store altitude string for a coordinate (after successful API fetch). */
+function setAltCache(lat, lng, altiStr) {
+    try {
+        const raw = localStorage.getItem(ALT_CACHE_KEY) || '{}';
+        const obj = JSON.parse(raw);
+        obj[altCacheKey(lat, lng)] = altiStr;
+        localStorage.setItem(ALT_CACHE_KEY, JSON.stringify(obj));
+    } catch (e) {}
+}
+
+// -----------------------------------------------------------------------------
+// History (last N coordinates)
+// Stored as array of { lat, lng, alti, ddd, originalInput }. originalInput
+// keeps the exact user text (format) for display and restore.
+// -----------------------------------------------------------------------------
+
+function getHistory() {
+    try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+/** Add an entry to history; dedupe by same position (4-decimal key), keep last HISTORY_MAX. */
+function addToHistory(entry) {
+    let list = getHistory();
+    const key = altCacheKey(entry.lat, entry.lng);
+    list = [entry].concat(list.filter(e => altCacheKey(e.lat, e.lng) !== key));
+    list = list.slice(0, HISTORY_MAX);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    renderHistory();
+}
+
+/** Escape string for safe use in HTML (content and attributes). */
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** Render the history list in #historyList; each item restores originalInput and runs processCoordinates on click. */
+function renderHistory() {
+    const list = getHistory();
+    const el = document.getElementById('historyList');
+    if (!el) return;
+
+    if (list.length === 0) {
+        el.innerHTML = '<p class="text-slate-500 text-[10px] p-2">No history yet. Generate a report to add entries.</p>';
+        return;
+    }
+
+    el.innerHTML = list.map((e, i) => {
+        const displayCoords = e.originalInput || e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
+        const labelOneLine = displayCoords.replace(/\s+/g, ' ').trim();
+        const label = `${labelOneLine} — ${e.alti || '—'}`;
+        return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-index="${i}" title="Tap to restore">${escapeHtml(label)}</button>`;
+    }).join('');
+
+    el.querySelectorAll('.history-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = parseInt(btn.getAttribute('data-index'), 10);
+            const list = getHistory();
+            const entry = list[i];
+            if (entry) {
+                const toRestore = entry.originalInput != null && entry.originalInput !== ''
+                    ? entry.originalInput
+                    : (entry.ddd || `${Number(entry.lat).toFixed(6)}, ${Number(entry.lng).toFixed(6)}`);
+                document.getElementById('combinedInput').value = toRestore;
+                processCoordinates();
+            }
+        });
+    });
+}
+
+// =============================================================================
+// NZTM2000 COORDINATE CONVERSION (GRS80 Ellipsoid)
+// =============================================================================
+//
+// New Zealand Transverse Mercator 2000 (NZTM2000) is a projection used for
+// official NZ mapping. Easting (E) and Northing (N) are in metres.
+// Formulae below implement the inverse (E,N → lat,lon) and forward (lat,lon → E,N)
+// using the standard Redfearn-type series expansions for the transverse Mercator.
+//
+// Reference: LINZ Standard for NZTM - GRS80 ellipsoid, central meridian 173°E,
+// false easting 1,600,000 m, false northing 10,000,000 m, scale factor 0.9996.
+// -----------------------------------------------------------------------------
+
+const NZTM = {
+    a: 6378137.0,              // GRS80 semi-major axis (m)
+    f: 1 / 298.257222101,      // GRS80 flattening
+    phizero: 0,                // Origin latitude (not used in simplified formulae)
+    lambdazero: 173.0,        // Central meridian (degrees E)
+    Nzero: 10000000,           // False northing (m)
+    Ezero: 1600000,            // False easting (m)
+    kzero: 0.9996              // Central meridian scale factor
+};
+
+/** Earth mean diameter in km (for Haversine distance). */
+const EarthDiamKm = 12742;
+
+/** Degrees to radians multiplier. */
+const PI_div_180_deg = Math.PI / 180;
+
+/**
+ * Convert NZTM2000 Easting and Northing to WGS84 latitude and longitude (decimal degrees).
+ *
+ * Implements the inverse transverse Mercator (Redfearn-style):
+ * 1. Remove false easting/northing and scale → get (x,y) in projection plane.
+ * 2. Compute meridian arc M and footpoint latitude phip from N.
+ * 3. Use series in (E - Ezero) to get latitude (phi) and longitude (lam).
+ *
+ * @param {number} E - Easting (metres)
+ * @param {number} N - Northing (metres)
+ * @returns {{ lat: number, lon: number }} - Latitude and longitude in decimal degrees
+ */
+function nztmToLatLon(E, N) {
+    const esq = 2 * NZTM.f - NZTM.f ** 2;
+    const n = NZTM.f / (2 - NZTM.f);
+    const a = NZTM.a;
+
+    // Meridian arc M from northing; then footpoint latitude phip via inverse series
+    const M = (N - NZTM.Nzero) / NZTM.kzero;
+    const A = a * (1 - n + (5/4) * (n**2 - n**3) + (81/64) * (n**4 - n**5));
+    const sigma = M / A;
+    const phip = sigma +
+        (3*n/2 - 27*n**3/32) * Math.sin(2*sigma) +
+        (21*n**2/16 - 55*n**4/32) * Math.sin(4*sigma) +
+        (151*n**3/96) * Math.sin(6*sigma);
+
+    // Radii and terms for latitude/longitude series
+    const sin_p = Math.sin(phip), cos_p = Math.cos(phip), tan_p = Math.tan(phip);
+    const rho = a * (1 - esq) / Math.pow(1 - esq * sin_p**2, 1.5);
+    const nu = a / Math.sqrt(1 - esq * sin_p**2);
+    const psi = nu / rho, t = tan_p, Et = E - NZTM.Ezero;
+
+    // Latitude: phip minus series in Et², Et⁴
+    const latTerm1 = (t * Et**2) / (2 * rho * nu * NZTM.kzero**2);
+    const latTerm2 = (t * Et**4) / (24 * rho * nu**3 * NZTM.kzero**4) * (5 + 3*t**2 + 8*psi - 4*psi**2 - 9*psi*t**2);
+    const lat = (phip - latTerm1 + latTerm2) * 180 / Math.PI;
+
+    // Longitude: central meridian plus series in Et, Et³
+    const lonTerm1 = Et / (nu * NZTM.kzero * cos_p);
+    const lonTerm2 = (Et**3) / (6 * nu**3 * NZTM.kzero**3 * cos_p) * (psi + 2*t**2);
+    const lon = NZTM.lambdazero + (lonTerm1 - lonTerm2) * 180 / Math.PI;
+
+    return { lat, lon };
+}
+
+/**
+ * Convert WGS84 latitude and longitude (decimal degrees) to NZTM2000 Easting and Northing.
+ *
+ * Forward transverse Mercator (Redfearn-style):
+ * 1. Compute meridian arc M(phi), then N = Nzero + k0*(M + series in w², w⁴).
+ * 2. E = Ezero + k0*(series in w, w³). Here w = (lon - lon0) in radians.
+ *
+ * @param {number} lat - Latitude (decimal degrees)
+ * @param {number} lon - Longitude (decimal degrees)
+ * @returns {{ e: number, n: number }} - Easting and Northing in metres (rounded)
+ */
+function latLonToNZTM(lat, lon) {
+    const phi = lat * Math.PI / 180;
+    const lam = lon * Math.PI / 180;
+    const lam0 = NZTM.lambdazero * Math.PI / 180;
+    const esq = 2 * NZTM.f - NZTM.f ** 2;
+    const a = NZTM.a;
+
+    // Radius of curvature in the prime vertical (perpendicular to meridian), metres.
+    const nu = a / Math.sqrt(1 - esq * Math.sin(phi)**2);
+    // Radius of curvature in the meridian (along the meridian), metres.
+    const rho = a * (1 - esq) / Math.pow(1 - esq * Math.sin(phi)**2, 1.5);
+    const psi = nu / rho;           // Ratio used in TM series (often written as η² or similar).
+    const t = Math.tan(phi);        // Tangent of latitude (recurring in TM formulae).
+    const w = lam - lam0;           // Longitude difference from central meridian (radians).
+
+    // Semi-minor axis (metres). Third flattening n = (a-b)/(a+b) is used in
+    // the meridian-arc series instead of f; it gives simpler coefficients.
+    const b = a * (1 - NZTM.f);
+    const n = (a - b) / (a + b);
+
+    // -------------------------------------------------------------------------
+    // Meridian arc M(φ): distance along the ellipsoid from equator to latitude φ.
+    // Formula: M = a * (1-n) * (1-n²) * [ A*φ - B*sin(2φ) + C*sin(4φ) ] (metres).
+    // The coefficients A, B, C come from the series expansion of the elliptic
+    // integral for meridian arc (e.g. Redfearn / Karney / USGS conventions).
+    // -------------------------------------------------------------------------
+    //   a * (1-n) * (1-n²)  — scale factor from ellipsoid geometry (n = third flattening).
+    //   A = 1 + 9/4*n² + 225/64*n⁴  — coefficient of φ (φ in radians). Higher powers of n
+    //       (e.g. n⁶) are negligible for GRS80; 9/4 and 225/64 are the standard series terms.
+    //   B = 3/2*n - 27/32*n³  — coefficient of sin(2φ). Corrects for ellipticity in the
+    //       first harmonic; 27/32 is the n³ term in the expansion.
+    //   C = 15/16*n² - 105/128*n⁴  — coefficient of sin(4φ). Second harmonic; 105/128 is the n⁴ term.
+    // Terms in sin(6φ), sin(8φ), ... are omitted (order < 1 mm for NZ latitudes).
+    // -------------------------------------------------------------------------
+    const M = a * (1 - n) * (1 - n**2) * (
+        (1 + 9/4*n**2 + 225/64*n**4) * phi -
+        (3/2*n - 27/32*n**3) * Math.sin(2*phi) +
+        (15/16*n**2 - 105/128*n**4) * Math.sin(4*phi)
+    );
+
+    // -------------------------------------------------------------------------
+    // Northing N (metres). Formula: N = Nzero + k0 * ( M + ΔN ).
+    // Nzero = 10,000,000 m (false northing). k0 = 0.9996 (scale on central meridian).
+    // ΔN is the transverse Mercator series giving the northward offset from the
+    // meridian arc M when we move east/west by angle w. It is a series in w², w⁴, ...
+    // -------------------------------------------------------------------------
+    //   ΔN ≈ (ν·tan φ·cos² φ) · [ w²/2  +  w⁴/24 · (5 - t² + 9ψ + 4ψ²)  +  O(w⁶) ]
+    //
+    //   w² term:  ν·t·cos²(φ)·w²/2
+    //       — main parabolic correction for moving off the central meridian; 1/2 is from
+    //         the Taylor expansion of the TM projection in longitude.
+    //
+    //   w⁴ term:  ν·t·cos⁴(φ)·w⁴/24 · (5 - t² + 9·ψ + 4·ψ²)
+    //       — 1/24: next coefficient in the series (fourth order in w).
+    //       — (5 - t² + 9·ψ + 4·ψ²): ellipsoid correction; t = tan φ, ψ = ν/ρ. These
+    //         terms keep the projection conformal and accurate to millimetres.
+    // -------------------------------------------------------------------------
+    const N = NZTM.Nzero + NZTM.kzero * (
+        M
+        + (nu * t * Math.cos(phi)**2) * (w**2 / 2)
+        + (nu * t * Math.pow(Math.cos(phi), 4)) * (w**4 / 24) * (5 - t**2 + 9*psi + 4*psi**2)
+    );
+
+    // -------------------------------------------------------------------------
+    // Easting E (metres). Formula: E = Ezero + k0 * ΔE.
+    // Ezero = 1,600,000 m (false easting). k0 = 0.9996.
+    // ΔE is the transverse Mercator series giving the eastward distance from the
+    // central meridian for longitude difference w. Series in w, w³, ...
+    // -------------------------------------------------------------------------
+    //   ΔE ≈ (ν·cos φ) · [ w  +  w³/6 · (ψ - t²)  +  O(w⁵) ]
+    //
+    //   w term:  ν·cos(φ)·w
+    //       — arc length along the parallel at this latitude; ν·cos φ is the radius
+    //         of the parallel (converted to metres), w is longitude in radians.
+    //
+    //   w³ term:  ν·cos³(φ)·w³/6 · (ψ - t²)
+    //       — 1/6: third-order series coefficient (from Taylor expansion of TM).
+    //       — (ψ - t²): ellipsoid correction (ψ = ν/ρ, t = tan φ) for conformality.
+    // -------------------------------------------------------------------------
+    const E = NZTM.Ezero + NZTM.kzero * (
+        (nu * Math.cos(phi)) * w
+        + (nu * Math.pow(Math.cos(phi), 3)) * (w**3 / 6) * (psi - t**2)
+    );
+
+    return { e: Math.round(E), n: Math.round(N) };
+}
+
+/**
+ * Get the NZ Topo50 map sheet code (e.g. "BX24") from NZTM E/N.
+ * Used for radio grid references. Grid is based on 24 km × 36 km cells.
+ *
+ * @param {number} e - Easting (m)
+ * @param {number} n - Northing (m)
+ * @returns {string} - Sheet code e.g. "BX24"
+ */
+function getTopo50Sheet(e, n) {
+    const rows = ["AS","AT","AU","AV","AW","AX","AY","AZ","BA","BB","BC","BD","BE","BF","BG","BH","BI","BJ","BK","BL","BM","BN","BO","BP","BQ","BR","BS","BT","BU","BV","BW","BX","BY","BZ","CA","CB","CC","CD"];
+    const rowIdx = Math.floor((6000000 - n) / 36000);
+    const colIdx = Math.floor((e - 1000000) / 24000) + 1;
+    const rowLetter = rows[rowIdx] || "??";
+    const colNumber = colIdx.toString().padStart(2, '0');
+    return `${rowLetter}${colNumber}`;
+}
+
+// =============================================================================
+// COORDINATE INPUT PARSER (flexible format)
+// =============================================================================
+//
+// Accepts:
+//   - NZTM: two large numbers (E > 900000) → nztmToLatLon
+//   - DDD:  two decimals e.g. -43.54, 172.64
+//   - DMS/DDM: text split in the middle; first half → latitude (degrees, [minutes], [seconds]);
+//              second half → longitude. Sign from presence of S/W or minus.
+// -----------------------------------------------------------------------------
+
+/**
+ * Parse user input into { lat, lon } (decimal degrees).
+ * Handles NZTM (two large numbers), DDD (two decimals), or DMS/DDM by splitting
+ * the string in the middle and interpreting each half as lat or lon with optional
+ * degrees, minutes, seconds (or decimal minutes).
+ *
+ * @param {string} input - Raw user input (any supported format)
+ * @returns {{ lat: number, lon: number } | null} - Parsed coordinates or null if invalid
+ */
+function flexibleParse(input) {
+    const clean = input.trim();
+    const nums = clean.match(/[-+]?\d*\.?\d+/g);
+    if (!nums || nums.length < 2) return null;
+
+    // Two numbers only and first > 900000 → treat as NZTM E, N
+    if (nums.length === 2 && parseFloat(nums[0]) > 900000) {
+        return nztmToLatLon(parseFloat(nums[0]), parseFloat(nums[1]));
+    }
+
+    // Split numeric array and string in half: first half = lat, second = lon
+    const midIndex = Math.floor(nums.length / 2);
+    const stringHalfIndex = Math.floor(clean.length / 2);
+    const part1 = clean.substring(0, stringHalfIndex);
+    const part2 = clean.substring(stringHalfIndex);
+
+    /** Convert one half (array of 1–3 numbers) to decimal degrees; sign from raw text (S/W or minus). */
+    function convertSegmentToDec(arr, rawText) {
+        let d = Math.abs(parseFloat(arr[0] || 0));
+        let m = (parseFloat(arr[1] || 0)) / 60;
+        let s = (parseFloat(arr[2] || 0)) / 3600;
+        let res = d + m + s;
+        if (rawText.includes('-') || /[SwW]/.test(rawText)) res = -res;
+        return res;
+    }
+
+    return {
+        lat: convertSegmentToDec(nums.slice(0, midIndex), part1),
+        lon: convertSegmentToDec(nums.slice(midIndex), part2)
+    };
+}
+
+// =============================================================================
+// MAIN PROCESSOR & REPORT GENERATOR
+// =============================================================================
+
+/**
+ * Parse input, compute NZTM/sheet/ref, optional vector from GPS, altitude (cache or API),
+ * build report text and map links, update DOM and history.
+ */
+async function processCoordinates() {
+    const btn = document.getElementById('genBtn');
+    try {
+        btn.innerText = "Processing...";
+
+        const rawInput = document.getElementById('combinedInput').value.trim();
+        const res = flexibleParse(rawInput);
+        if (!res) throw new Error("Format error. Check your coordinates.");
+        targetLat = res.lat;
+        targetLng = res.lon;
+
+        const nztm = latLonToNZTM(targetLat, targetLng);
+        const sheet = getTopo50Sheet(nztm.e, nztm.n);
+        const gE = Math.floor((nztm.e % 100000) / 100).toString().padStart(3, '0');
+        const gN = Math.floor((nztm.n % 100000) / 100).toString().padStart(3, '0');
+
+        // Vector (distance + bearing) from current GPS position to target
+        let vectorReport = "";
+        if (myLat != null && myLng != null) {
+            const dLat = (targetLat - myLat) * Math.PI / 180;
+            const dLon = (targetLng - myLng) * Math.PI / 180;
+            const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*PI_div_180_deg)*Math.cos(targetLat*PI_div_180_deg)*Math.sin(dLon/2)**2;
+            const dist = (EarthDiamKm * Math.atan2(Math.sqrt(a_v), Math.sqrt(1 - a_v))).toFixed(2);
+
+            const y_v = Math.sin(dLon) * Math.cos(targetLat*PI_div_180_deg);
+            const x_v = Math.cos(myLat*PI_div_180_deg)*Math.sin(targetLat*PI_div_180_deg) - Math.sin(myLat*PI_div_180_deg)*Math.cos(targetLat*PI_div_180_deg)*Math.cos(dLon);
+            const gridBrg = (Math.atan2(y_v, x_v) * 180 / Math.PI + 360) % 360;
+            const magBrg = (gridBrg - MAG_DEC + 360) % 360;
+
+            vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid/ True North) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination offset for compass use)`;
+        }
+
+        // Altitude: use cache first (offline); else fetch from API and cache
+        let alti = getAltFromCache(targetLat, targetLng);
+        if (alti == null) {
+            alti = "Checking...";
+            try {
+                const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
+                const data = await r.json();
+                alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
+                setAltCache(targetLat, targetLng, alti);
+            } catch (e) {
+                alti = "Offline";
+            }
+        }
+
+        const latF = targetLat.toFixed(6);
+        const lngF = targetLng.toFixed(6);
+
+        const topoUrl = `https://www.topomap.co.nz/NZTopoMap?v=2&ll=${latF},${lngF}&z=15&pin=1`;
+        const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
+        const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
+        const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
+        const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
+        const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
+
+        const report = `ARC LOCATION REPORT
+----------------------
+TIME  :   ${new Date().toLocaleString('en-NZ', { hour12: false })}
+ALT   :   ${alti}${vectorReport}
+
+--Topo50 GRID Ref+Sheet (For Radio comms):
+SHEET: ${sheet}  REF: ${gE} ${gN}
+
+--COORDINATES:
+NZTM2000  :   E${nztm.e} N${nztm.n}
+DDD   :   ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
+DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
+DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
+
+--LINKS:
+NZ TOPO: ${topoUrl}
+G.Maps:   ${googleUrl}
+G.Earth:  ${earthUrl}
+WINDY.com:${windyUrl}
+YR.no:   ${yrNoUrl}`;
+
+        document.getElementById('reportContent').innerText = report;
+        addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: rawInput });
+
+        document.getElementById('topoLink').href = topoUrl;
+        document.getElementById('googleLink').href = googleUrl;
+        document.getElementById('earthLink').href = earthUrl;
+        document.getElementById('windyLinkBtn').href = windyUrl;
+        document.getElementById('yrNoLinkBtn').href = yrNoUrl;
+
+        document.getElementById('resultArea').classList.remove('hidden');
+        btn.innerText = "Generate Report";
+
+    } catch (err) {
+        alert(err.message);
+        btn.innerText = "Generate Report";
+    }
+}
+
+// =============================================================================
+// COORDINATE FORMAT HELPERS (decimal degrees → DMS / DDM strings)
+// =============================================================================
+
+/**
+ * Convert decimal degrees to Degrees Minutes Seconds string (e.g. "S 43° 32' 24.0\"").
+ * @param {number} dec - Angle in decimal degrees
+ * @param {boolean} isLat - True for latitude (N/S), false for longitude (E/W)
+ */
+function toDMS(dec, isLat) {
+    const abs = Math.abs(dec);
+    const d = Math.floor(abs);
+    const m = Math.floor((abs - d) * 60);
+    const s = ((abs - d - m/60) * 3600).toFixed(1);
+    const hem = isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E');
+    return `${hem} ${d}° ${m}' ${s}"`;
+}
+
+/**
+ * Convert decimal degrees to Degrees Decimal Minutes string (e.g. "S 43° 32.400'").
+ * @param {number} dec - Angle in decimal degrees
+ * @param {boolean} isLat - True for latitude, false for longitude
+ */
+function toDDM(dec, isLat) {
+    const abs = Math.abs(dec);
+    const d = Math.floor(abs);
+    const m = ((abs - d) * 60).toFixed(3);
+    const hem = isLat ? (dec < 0 ? 'S' : 'N') : (dec < 0 ? 'W' : 'E');
+    return `${hem} ${d}° ${m}'`;
+}
+
+// =============================================================================
+// GPS INIT & UI ACTIONS
+// =============================================================================
+
+/** Show or hide the instructions modal. */
+function toggleModal(show) {
+    const modal = document.getElementById('instModal');
+    if (modal) {
+        show ? modal.classList.remove('hidden') : modal.classList.add('hidden');
+    }
+}
+
+/**
+ * Initialize GPS on mobile: try getCurrentPosition (5s timeout), then watchPosition to keep coords updated.
+ * On PC, leaves vector disabled and shows a message.
+ */
+function initGPS() {
+    const statusBox = document.getElementById('gpsStatus');
+    if (!statusBox) return;
+
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+    if (!isMobile) {
+        statusBox.innerHTML = '<span class="text-slate-500">● PC Detected: GPS Vector Disabled</span>';
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        statusBox.innerHTML = '<span class="text-red-500">● GPS Not Supported</span>';
+        return;
+    }
+
+    statusBox.innerHTML = 'GPS: Acquiring satellite lock (5s max)...';
+
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            myLat = pos.coords.latitude;
+            myLng = pos.coords.longitude;
+            statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(pos.coords.accuracy)}m)</span>`;
+            navigator.geolocation.watchPosition(
+                (wPos) => {
+                    myLat = wPos.coords.latitude;
+                    myLng = wPos.coords.longitude;
+                    statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(wPos.coords.accuracy)}m)</span>`;
+                },
+                () => {},
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+            );
+        },
+        (err) => {
+            statusBox.innerHTML = '<span class="text-amber-500">● GPS Timeout/No Fix. Vector skipped.</span>';
+            myLat = null;
+            myLng = null;
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+}
+
+/** Fill input with current GPS position (DDD) and run report. Mobile only. */
+function getCurrentLocation() {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    if (!isMobile) {
+        alert("GPS is disabled on PC. Please type coordinates manually.");
+        return;
+    }
+    if (myLat == null || myLng == null) {
+        alert("No GPS fix acquired. The vector/location features will be skipped.");
+        return;
+    }
+    document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;
+    processCoordinates();
+}
+
+/** Clear the coordinate input and hide the result area. */
+function clearAll() {
+    const input = document.getElementById('combinedInput');
+    const resultArea = document.getElementById('resultArea');
+    if (input) input.value = '';
+    if (resultArea) resultArea.classList.add('hidden');
+}
+
+function copyToClipboard() {
+    const report = document.getElementById('reportContent');
+    if (report) {
+        navigator.clipboard.writeText(report.innerText);
+        alert("Copied to clipboard");
+    }
+}
+
+function saveAsPDF() {
+    window.print();
+}
+
+function shareReport() {
+    const report = document.getElementById('reportContent');
+    if (navigator.share && report) {
+        navigator.share({ title: 'ARC Report', text: report.innerText });
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Debug: triple-click logo reveals footer and runs projection unit tests
+// -----------------------------------------------------------------------------
+
+function handleLogoClick() {
+    clickCount++;
+    if (clickCount === 3) {
+        const footer = document.getElementById('secretFooter');
+        if (footer) footer.classList.remove('hidden');
+        runUnitTests();
+        fetch('https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up')
+            .then(r => r.json())
+            .then(d => {
+                const el = document.getElementById('visitCount');
+                if (el) el.innerText = d.count;
+            })
+            .catch(() => {
+                const el = document.getElementById('visitCount');
+                if (el) el.innerText = "Err";
+            });
+    }
+    setTimeout(() => { clickCount = 0; }, 2000);
+}
+
+function runUnitTests() {
+    const out = document.getElementById('testOutput');
+    if (!out) return;
+    out.innerHTML = "ENGINE PROJECTION TESTS:<br>";
+    const tests = [
+        { i: "1571000 5178500", label: "NZTM -> DDD", expected: -43.54 },
+        { i: "-43.54, 172.64", label: "DDD -> NZTM", expected: 1571000 }
+    ];
+    tests.forEach(test => {
+        const res = flexibleParse(test.i);
+        const val = test.label.includes("DDD") ? res.lat : latLonToNZTM(res.lat, res.lon).e;
+        const pass = Math.abs(val - test.expected) < 5;
+        out.innerHTML += `${pass ? '✅' : '❌'} ${test.label} | Res: ${val.toFixed(2)}<br>`;
+    });
+}

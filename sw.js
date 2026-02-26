@@ -1,7 +1,7 @@
 // sw.js - ARC Topo Finder Service Worker
 // Field-ready: load once at home, use offline in remote NZ (e.g. rescue missions).
 
-const CACHE_NAME = 'arc-topo-finder-v5.7';
+const CACHE_NAME = 'arc-topo-finder-v5.8';
 
 // Core files needed for full offline use after one load at home
 const ASSETS_TO_CACHE = [
@@ -9,6 +9,7 @@ const ASSETS_TO_CACHE = [
     '/Index.html',
     '/Topo2.html',
     '/Acrlogo.png',
+    '/app.js',
     '/manifest.json',
     'https://cdn.tailwindcss.com' // Cache Tailwind so styling works offline
 ];

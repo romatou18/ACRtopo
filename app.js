@@ -107,7 +107,7 @@ function escapeHtml(s) {
         .replace(/"/g, '&quot;');
 }
 
-/** Render the history list in #historyList; each item restores originalInput and runs processCoordinates on click. */
+/** Render the history list in #historyList. Clicks handled by delegation on #historyList (reliable offline/mobile). */
 function renderHistory() {
     const list = getHistory();
     const el = document.getElementById('historyList');
@@ -124,20 +124,35 @@ function renderHistory() {
         const label = `${labelOneLine} — ${e.alti || '—'}`;
         return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-index="${i}" title="Tap to restore">${escapeHtml(label)}</button>`;
     }).join('');
+}
 
-    el.querySelectorAll('.history-item').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const i = parseInt(btn.getAttribute('data-index'), 10);
-            const list = getHistory();
-            const entry = list[i];
-            if (entry) {
-                const toRestore = entry.originalInput != null && entry.originalInput !== ''
-                    ? entry.originalInput
-                    : (entry.ddd || `${Number(entry.lat).toFixed(6)}, ${Number(entry.lng).toFixed(6)}`);
-                document.getElementById('combinedInput').value = toRestore;
-                processCoordinates();
-            }
-        });
+/** Restore a history entry into the input and run report. Called from delegation or programmatically. */
+function restoreHistoryEntry(index) {
+    const list = getHistory();
+    const entry = list[parseInt(index, 10)];
+    if (!entry) return;
+    const toRestore = entry.originalInput != null && entry.originalInput !== ''
+        ? entry.originalInput
+        : (entry.ddd || `${Number(entry.lat).toFixed(6)}, ${Number(entry.lng).toFixed(6)}`);
+    const input = document.getElementById('combinedInput');
+    if (input) {
+        input.value = toRestore;
+        input.removeAttribute('readonly');
+        processCoordinates();
+    }
+}
+
+/** Attach one click listener to #historyList (event delegation). Survives re-renders and works offline/mobile. */
+function setupHistoryDelegation() {
+    const el = document.getElementById('historyList');
+    if (!el) return;
+    el.addEventListener('click', function (ev) {
+        const btn = ev.target && ev.target.closest && ev.target.closest('.history-item');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const idx = btn.getAttribute('data-index');
+        if (idx != null) restoreHistoryEntry(idx);
     });
 }
 
@@ -453,10 +468,12 @@ function flexibleParse(input) {
  */
 async function processCoordinates() {
     const btn = document.getElementById('genBtn');
+    const inputEl = document.getElementById('combinedInput');
+    if (!inputEl) return;
     try {
-        btn.innerText = "Processing...";
+        if (btn) btn.innerText = "Processing...";
 
-        const rawInput = document.getElementById('combinedInput').value.trim();
+        const rawInput = inputEl.value.trim();
         const res = flexibleParse(rawInput);
         if (!res) throw new Error("Format error. Check your coordinates.");
         targetLat = res.lat;
@@ -483,12 +500,16 @@ async function processCoordinates() {
             vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid/ True North) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination offset for compass use)`;
         }
 
-        // Altitude: use cache first (offline); else fetch from API and cache
+        // Altitude: use cache first (offline); else fetch with timeout so we don't hang when offline
         let alti = getAltFromCache(targetLat, targetLng);
         if (alti == null) {
             alti = "Checking...";
             try {
-                const r = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`);
+                const url = `https://api.open-meteo.com/v1/elevation?latitude=${targetLat}&longitude=${targetLng}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const r = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 const data = await r.json();
                 alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
                 setAltCache(targetLat, targetLng, alti);
@@ -528,21 +549,24 @@ G.Earth:  ${earthUrl}
 WINDY.com:${windyUrl}
 YR.no:   ${yrNoUrl}`;
 
-        document.getElementById('reportContent').innerText = report;
+        const reportContent = document.getElementById('reportContent');
+        if (reportContent) reportContent.innerText = report;
         addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: rawInput });
 
-        document.getElementById('topoLink').href = topoUrl;
-        document.getElementById('googleLink').href = googleUrl;
-        document.getElementById('earthLink').href = earthUrl;
-        document.getElementById('windyLinkBtn').href = windyUrl;
-        document.getElementById('yrNoLinkBtn').href = yrNoUrl;
+        const topoLink = document.getElementById('topoLink'), googleLink = document.getElementById('googleLink'), earthLink = document.getElementById('earthLink'), windyLinkBtn = document.getElementById('windyLinkBtn'), yrNoLinkBtn = document.getElementById('yrNoLinkBtn');
+        if (topoLink) topoLink.href = topoUrl;
+        if (googleLink) googleLink.href = googleUrl;
+        if (earthLink) earthLink.href = earthUrl;
+        if (windyLinkBtn) windyLinkBtn.href = windyUrl;
+        if (yrNoLinkBtn) yrNoLinkBtn.href = yrNoUrl;
 
-        document.getElementById('resultArea').classList.remove('hidden');
-        btn.innerText = "Generate Report";
+        const resultArea = document.getElementById('resultArea');
+        if (resultArea) resultArea.classList.remove('hidden');
+        if (btn) btn.innerText = "Generate Report";
 
     } catch (err) {
-        alert(err.message);
-        btn.innerText = "Generate Report";
+        if (typeof alert === 'function') alert(err.message);
+        if (btn) btn.innerText = "Generate Report";
     }
 }
 

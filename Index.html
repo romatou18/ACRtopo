@@ -21,6 +21,14 @@
         }
         /* Custom modal animation */
         #instModal { transition: opacity 0.2s ease-in-out; }
+        /* History list: fixed height so overflow scroll works on all devices */
+        #historyList {
+            max-height: 220px;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+        }
     </style>
 </head>
 <body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS(); renderHistory();">
@@ -70,7 +78,7 @@
 
             <div class="mt-4 no-print">
                 <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">History (last 10 — tap to restore)</h3>
-                <div id="historyList" class="space-y-1 max-h-32 overflow-y-auto rounded-xl border border-slate-600 bg-slate-800/50 p-2" role="list"></div>
+                <div id="historyList" class="space-y-1 rounded-xl border border-slate-600 bg-slate-800/50 p-2" role="list"></div>
             </div>
         </div>
 

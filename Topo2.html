@@ -7,27 +7,32 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="manifest" href="/manifest.json">
     <script>
-        // Service Worker registration for offline PWA capabilities
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
     </script>
     <style>
-        /* Print styling for "Save as PDF" functionality */
         @media print {
             body { background: white; color: black; padding: 0; }
             .no-print { display: none !important; }
-            .print-only { display: block !important; }
             .bg-slate-800 { background: white !important; border: none !important; box-shadow: none !important; }
             .report-box { border: 1px solid #000 !important; background: #fff !important; }
             pre { color: black !important; font-size: 12pt; }
         }
+        /* Custom modal animation */
+        #instModal { transition: opacity 0.2s ease-in-out; }
     </style>
 </head>
 <body class="bg-slate-900 p-4 font-sans text-gray-100" onload="initGPS()">
 
-    <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700">
+    <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 relative">
         
+        <button onclick="toggleModal(true)" class="absolute top-4 right-4 text-slate-500 hover:text-emerald-400 no-print">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="Ref: M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </button>
+
         <div class="text-center no-print">
             <img src="Acrlogo.png" id="logoTrigger" onclick="handleLogoClick()" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto cursor-pointer active:opacity-50">
             <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
@@ -48,7 +53,7 @@ NZTM: 1571000, 5178500"
                     Generate Report
                 </button>
                 <button onclick="getCurrentLocation()" title="Get My GPS" class="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-xl">
-                    My location
+                    📍
                 </button>
                 <button onclick="clearAll()" class="col-span-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-4 rounded-xl transition-all border border-slate-600 active:scale-95">
                     Clear
@@ -60,42 +65,68 @@ NZTM: 1571000, 5178500"
             </div>
         </div>
 
-        <div id="secretFooter" class="mt-4 pt-4 border-t border-slate-700 text-center hidden">
-            <div id="testOutput" class="text-[9px] font-mono text-left bg-black p-2 rounded mb-2 text-gray-400 max-h-32 overflow-y-auto"></div>
-            <p class="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">
-                ARC Tool Usage: <span id="visitCount" class="text-emerald-500">...</span> hits.
-            </p>
-        </div>
-
         <div id="resultArea" class="mt-4 hidden space-y-4">
-            
             <div class="grid grid-cols-4 gap-2 no-print">
                 <a id="topoLink" target="_blank" class="flex items-center justify-center bg-blue-600 hover:bg-blue-500 p-2 rounded-lg font-bold text-[9px] text-center">NZ Topo50</a>
                 <a id="googleLink" target="_blank" class="flex items-center justify-center bg-red-600 hover:bg-red-500 p-2 rounded-lg font-bold text-[9px] text-center">G Maps</a>
                 <a id="earthLink" target="_blank" class="flex items-center justify-center bg-sky-600 hover:bg-sky-500 p-2 rounded-lg font-bold text-[9px] text-center">G Earth</a>
-                <a id="windyLinkBtn" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-2 rounded-lg font-bold text-[9px] text-center">Windy.com Wx</a>
-                <a id="yrNoLinkBtn" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-2 rounded-lg font-bold text-[9px] text-center">Yr.no Wx</a>
-                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-2 rounded-lg font-bold text-[9px] text-center">Wx Radar</a>
+                <a id="windyLinkBtn" target="_blank" class="flex items-center justify-center bg-orange-600 hover:bg-orange-500 p-2 rounded-lg font-bold text-[9px] text-center">Windy</a>
+                <a id="yrNoLinkBtn" target="_blank" class="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 p-2 rounded-lg font-bold text-[9px] text-center">Yr.no</a>
+                <a id="zoomEarthLink" target="_blank" class="flex items-center justify-center bg-blue-900 hover:bg-blue-800 p-2 rounded-lg font-bold text-[9px] text-center">Radar</a>
             </div>
 
             <div class="report-box bg-slate-700 p-4 rounded-xl border border-slate-600">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest no-print">ARC Location Report</span>
-                <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 mt-2 whitespace-pre-wrap leading-relaxed"></pre>
-                
+                <pre id="reportContent" class="text-[11px] font-mono text-emerald-300 whitespace-pre-wrap leading-relaxed"></pre>
                 <div class="grid grid-cols-3 gap-2 mt-4 no-print">
-                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 hover:bg-emerald-700/40 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold py-3 rounded-lg">📋 COPY</button>
-                    <button onclick="saveAsPDF()" class="bg-slate-600 hover:bg-slate-500 text-white text-[10px] font-bold py-3 rounded-lg">📄 PDF</button>
-                    <button onclick="shareReport()" class="bg-blue-700/20 hover:bg-blue-700/40 text-blue-400 border border-blue-500/30 text-[10px] font-bold py-3 rounded-lg">📤 SHARE</button>
+                    <button onclick="copyToClipboard()" class="bg-emerald-700/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold py-3 rounded-lg">📋 COPY</button>
+                    <button onclick="saveAsPDF()" class="bg-slate-600 text-white text-[10px] font-bold py-3 rounded-lg">📄 PDF</button>
+                    <button onclick="shareReport()" class="bg-blue-700/20 text-blue-400 border border-blue-500/30 text-[10px] font-bold py-3 rounded-lg">📤 SHARE</button>
                 </div>
             </div>
+        </div>
+
+        <div id="secretFooter" class="mt-4 pt-4 border-t border-slate-700 text-center hidden">
+            <p class="text-[10px] text-slate-500 uppercase">Hits: <span id="visitCount" class="text-emerald-500">...</span></p>
+        </div>
+    </div>
+
+    <div id="instModal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden no-print">
+        <div class="bg-slate-800 w-full max-w-sm rounded-2xl border border-slate-600 p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-slate-700 pb-2">ARC Team Instructions</h2>
+            <div class="space-y-4 text-sm text-slate-300">
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">1. PWA Installation</h3>
+                    <p>Tap "Share" (iOS) or "Settings" (Android) and select <b>"Add to Home Screen"</b>. This allows full offline use in the field.</p>
+                </section>
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">2. Coordinate Input</h3>
+                    <p>Paste text from Radio logs or InReach. It handles NZTM (E/N), DDD, DMS, and DDM automatically.</p>
+                </section>
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">3. The Vector Feature</h3>
+                    <p>On mobile, the app tries to get a 5-secondd GPS lock. If successful, it calculates the <b>Bearing</b> and <b>Distance</b> from your current location to the target.
+                    Including the offset Magnetic North declination, so that you can use the bearing directly from the app/map to the compass in case!</p>
+                </section>
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">4. Offline Limitations</h3>
+                    <p>Coordinates conversion & NZTM math work 100% offline. However, <b>Altitude</b> and <b>External Maps</b> require active data/satellite link.</p>
+                </section>
+            </div>
+            <button onclick="toggleModal(false)" class="mt-6 w-full bg-emerald-600 text-white font-bold py-3 rounded-xl">Got it</button>
         </div>
     </div>
 
     <script>
+        // Modal Toggle
+        function toggleModal(show) {
+            const modal = document.getElementById('instModal');
+            show ? modal.classList.remove('hidden') : modal.classList.add('hidden');
+        }
+
         /**
          * ARC TEAM TOPO FINDER - ENGINE V5.6
          * Features: Rigorous NZTM, Segmented Parsing, Elevation, Mag/Grid Bearings, Live GPS Status, Usage Counter
-         */
+        */
 
         let targetLat = null, targetLng = null;
         let myLat = null, myLng = null;
@@ -114,6 +145,9 @@ NZTM: 1571000, 5178500"
             Ezero: 1600000,           // False Easting
             kzero: 0.9996             // Central Meridian Scale Factor
         };
+
+        const EarthDiamKm = 12742
+        const PI_div_180_deg = Math.PI/180
 
         // ------------------------------------------------------------------
         // 1. HIGH PRECISION NZTM TO LAT/LON
@@ -236,15 +270,20 @@ NZTM: 1571000, 5178500"
                 if (myLat && myLng) {
                     const dLat = (targetLat - myLat) * Math.PI / 180;
                     const dLon = (targetLng - myLng) * Math.PI / 180;
-                    const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.sin(dLon/2)**2;
-                    const dist = (12742 * Math.atan2(Math.sqrt(a_v), Math.sqrt(1-a_v))).toFixed(2);
+                    const a_v = Math.sin(dLat/2)**2 + Math.cos(myLat*PI_div_180_deg)*Math.cos(targetLat*PI_div_180_deg)*Math.sin(dLon/2)**2;
+
+                    // Haversine distance formula.
+                    const dist = (EarthDiamKm * Math.atan2(Math.sqrt(a_v), Math.sqrt(1-a_v))).toFixed(2);
                     
-                    const y_v = Math.sin(dLon) * Math.cos(targetLat*Math.PI/180);
-                    const x_v = Math.cos(myLat*Math.PI/180)*Math.sin(targetLat*Math.PI/180) - Math.sin(myLat*Math.PI/180)*Math.cos(targetLat*Math.PI/180)*Math.cos(dLon);
+                    const y_v = Math.sin(dLon) * Math.cos(targetLat*PI_div_180_deg);
+                    const x_v = Math.cos(myLat*PI_div_180_deg)*Math.sin(targetLat*PI_div_180_deg) - Math.sin(myLat*PI_div_180_deg)*Math.cos(targetLat*PI_div_180_deg)*Math.cos(dLon);
+
+                    // Bearing to North on the map
                     const gridBrg = (Math.atan2(y_v, x_v) * 180 / Math.PI + 360) % 360;
+                    // Magnetic bearing to use on the compass
                     const magBrg = (gridBrg - MAG_DEC + 360) % 360;
                     
-                    vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination)`;
+                    vectorReport = `\nVECTOR:   ${dist}km from you\nBearing   :   ${Math.round(gridBrg)}°(Grid/ True North) | ${Math.round(magBrg)}°Magnetic (${MAG_DEC}°E Canterbury declination offset for compass use)`;
                 }
 
                 let alti = "Checking...";

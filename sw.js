@@ -1,34 +1,56 @@
-// sw.js - ARC Topo Finder Service Worker
+// sw.js - ARC Team Topo Finder Service Worker
 // Field-ready: load once at home, use offline in remote NZ (e.g. rescue missions).
+// Ensures the app shell loads from cache on cold start when offline (e.g. Android).
 
-const CACHE_NAME = 'arc-topo-finder-v5.8';
+const CACHE_NAME = 'arc-topo-finder-v5.9';
 
-// Core files needed for full offline use after one load at home
-const ASSETS_TO_CACHE = [
+// Critical assets: must be cached for offline. App shell first so install succeeds even if CDN fails.
+const CRITICAL_ASSETS = [
     '/',
     '/Index.html',
-    '/Topo2.html',
-    '/Acrlogo.png',
     '/app.js',
     '/manifest.json',
-    'https://cdn.tailwindcss.com' // Cache Tailwind so styling works offline
+    '/Acrlogo.png',
+    '/Topo.html',
+    '/Topo2.html'
+];
+const OPTIONAL_ASSETS = [
+    'https://cdn.tailwindcss.com'
 ];
 
-const OFFLINE_FALLBACK = '/Index.html';
+const OFFLINE_DOCS = ['/Index.html', '/'];  // Try these in order for any document request.
 
-// 1. Install Step: Cache the files
+function isAppOrigin(url) {
+    try {
+        return new URL(url).origin === self.location.origin;
+    } catch (e) {
+        return false;
+    }
+}
+
+/** For a navigation to our app, return the first cached document we have (so we never hit network when offline). */
+function getCachedAppDoc(cache) {
+    return OFFLINE_DOCS.reduce((p, path) => p.then((r) => r || cache.match(path)), Promise.resolve(null));
+}
+
+// 1. Install: cache critical assets first; optional (e.g. Tailwind) must not block activation
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => {
-                console.log('[Service Worker] Caching offline assets');
-                return cache.addAll(ASSETS_TO_CACHE);
+                console.log('[Service Worker] Caching critical offline assets');
+                return cache.addAll(CRITICAL_ASSETS);
+            })
+            .then(() => {
+                return caches.open(CACHE_NAME).then((cache) =>
+                    Promise.allSettled(OPTIONAL_ASSETS.map((url) => cache.add(url)))
+                );
             })
             .then(() => self.skipWaiting())
     );
 });
 
-// 2. Activate Step: Clean up old versions of the cache
+// 2. Activate: take control immediately so we can serve on next navigation
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((cacheNames) => {
@@ -42,37 +64,60 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
-    return self.clients.claim();
+    event.waitUntil(self.clients.claim());
 });
 
-// 3. Fetch Step: Intercept network requests
+// 3. Fetch: for document navigations to our origin, prefer cache so cold start works offline
 self.addEventListener('fetch', (event) => {
-    const url = event.request.url;
-    const isNav = event.request.mode === 'navigate';
+    const request = event.request;
+    const url = request.url;
+    const isNav = request.mode === 'navigate';
 
-    // Don't intercept external APIs – let app handle "Offline" in try/catch
     if (url.includes('api.open-meteo.com') || url.includes('api.counterapi.dev')) {
         return;
     }
 
     event.respondWith(
-        caches.match(event.request)
-            .then((cachedResponse) => {
-                if (cachedResponse) return cachedResponse;
-                return fetch(event.request)
-                    .then((networkResponse) => {
-                        if (networkResponse && networkResponse.ok && event.request.url.startsWith(self.location.origin)) {
-                            const clone = networkResponse.clone();
-                            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        (function respond() {
+            // Navigation to our app: try cache first (by request URL, then by known app doc URLs)
+            // so we never need the network when offline and avoid Android "splash only" issue.
+            if (isNav && isAppOrigin(url)) {
+                return caches.open(CACHE_NAME).then((cache) => {
+                    return cache.match(request)
+                        .then((cached) => cached || getCachedAppDoc(cache))
+                        .then((cached) => {
+                            if (cached) return cached;
+                            return fetch(request)
+                                .then((res) => {
+                                    if (res && res.ok) {
+                                        const clone = res.clone();
+                                        cache.put(request, clone);
+                                    }
+                                    return res;
+                                })
+                                .catch(() => getCachedAppDoc(cache).then((f) => f || new Response(
+                                    '<!DOCTYPE html><html><body><p>Offline. Open the app once with data to cache it.</p></body></html>',
+                                    { status: 503, statusText: 'Service Unavailable', headers: { 'Content-Type': 'text/html' } }
+                                )));
+                        });
+                });
+            }
+            // All other requests: cache-first, then network
+            return caches.match(request).then((cached) => {
+                if (cached) return cached;
+                return fetch(request)
+                    .then((res) => {
+                        if (res && res.ok && isAppOrigin(url)) {
+                            const clone = res.clone();
+                            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
                         }
-                        return networkResponse;
+                        return res;
                     })
-                    .catch((err) => {
-                        if (isNav) {
-                            return caches.match(OFFLINE_FALLBACK).then((fallback) => fallback || new Response('Offline', { status: 503, statusText: 'Service Unavailable' }));
-                        }
-                        return undefined;
+                    .catch(() => {
+                        if (!isNav) return undefined;
+                        return caches.open(CACHE_NAME).then((cache) => getCachedAppDoc(cache));
                     });
-            })
+            });
+        })()
     );
 });

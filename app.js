@@ -525,7 +525,7 @@ async function processCoordinates() {
         const googleUrl = `https://www.google.com/maps/search/?api=1&query=${latF},${lngF}`;
         const earthUrl = `https://earth.google.com/web/search/${latF},${lngF}`;
         const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
-        const zoomEarth = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
+        const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
         const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
 
         const report = `ARC LOCATION REPORT
@@ -553,12 +553,19 @@ YR.no:   ${yrNoUrl}`;
         if (reportContent) reportContent.innerText = report;
         addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: rawInput });
 
-        const topoLink = document.getElementById('topoLink'), googleLink = document.getElementById('googleLink'), earthLink = document.getElementById('earthLink'), windyLinkBtn = document.getElementById('windyLinkBtn'), yrNoLinkBtn = document.getElementById('yrNoLinkBtn');
+        const topoLink = document.getElementById('topoLink');
+        const googleLink = document.getElementById('googleLink');
+        const earthLink = document.getElementById('earthLink');
+        const windyLinkBtn = document.getElementById('windyLinkBtn');
+        const yrNoLinkBtn = document.getElementById('yrNoLinkBtn');
+        const zoomEarthLink = document.getElementById('zoomEarthLink');
+
         if (topoLink) topoLink.href = topoUrl;
         if (googleLink) googleLink.href = googleUrl;
         if (earthLink) earthLink.href = earthUrl;
         if (windyLinkBtn) windyLinkBtn.href = windyUrl;
         if (yrNoLinkBtn) yrNoLinkBtn.href = yrNoUrl;
+        if (zoomEarthLink) zoomEarthLink.href = zoomEarthUrl;
 
         const resultArea = document.getElementById('resultArea');
         if (resultArea) resultArea.classList.remove('hidden');

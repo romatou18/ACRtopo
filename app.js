@@ -185,6 +185,57 @@ const EarthDiamKm = 12742;
 /** Degrees to radians multiplier. */
 const PI_div_180_deg = Math.PI / 180;
 
+// -----------------------------------------------------------------------------
+// New Zealand bounds and validation (for rescue ops: reject clearly wrong coords)
+// -----------------------------------------------------------------------------
+
+/** Approximate mainland NZ + Chathams: lat/lon in decimal degrees. */
+const NZ_BOUNDS = {
+    latMin: -47.5,
+    latMax: -33.9,
+    lonMin: 166.2,
+    lonMax: 178.9
+};
+
+/** Christchurch (Canterbury) reference for "within 500 km" check. */
+const CHRISTCHURCH = { lat: -43.5321, lon: 172.6362 };
+
+/** Max distance (km) from Christchurch to consider coords plausible for this app. */
+const MAX_DISTANCE_KM = 500;
+
+/** Haversine distance between two points (km). */
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const dLat = (lat2 - lat1) * PI_div_180_deg;
+    const dLon = (lon2 - lon1) * PI_div_180_deg;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * PI_div_180_deg) * Math.cos(lat2 * PI_div_180_deg) * Math.sin(dLon / 2) ** 2;
+    return EarthDiamKm * 0.5 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** True if (lat, lon) is inside the NZ bounds. */
+function isInNewZealand(lat, lon) {
+    return lat >= NZ_BOUNDS.latMin && lat <= NZ_BOUNDS.latMax && lon >= NZ_BOUNDS.lonMin && lon <= NZ_BOUNDS.lonMax;
+}
+
+/** True if (lat, lon) is within maxKm of Christchurch. */
+function isWithinRangeOfChristchurch(lat, lon, maxKm) {
+    return haversineKm(CHRISTCHURCH.lat, CHRISTCHURCH.lon, lat, lon) <= (maxKm ?? MAX_DISTANCE_KM);
+}
+
+/**
+ * Validate coords for rescue use: must be in NZ and within MAX_DISTANCE_KM of Christchurch.
+ * @returns {{ ok: boolean, message?: string }}
+ */
+function validateCoordinates(lat, lon) {
+    if (!isInNewZealand(lat, lon)) {
+        return { ok: false, message: "Coordinates are outside New Zealand. Check the pasted text (e.g. extra text from a message)." };
+    }
+    if (!isWithinRangeOfChristchurch(lat, lon)) {
+        const km = Math.round(haversineKm(CHRISTCHURCH.lat, CHRISTCHURCH.lon, lat, lon));
+        return { ok: false, message: `Coordinates are ${km} km from Christchurch (>${MAX_DISTANCE_KM} km). Likely wrong or from another region — check the pasted text.` };
+    }
+    return { ok: true };
+}
+
 /**
  * Convert NZTM2000 Easting and Northing to WGS84 latitude and longitude (decimal degrees).
  *
@@ -407,6 +458,77 @@ function getTopo50Sheet(e, n) {
 }
 
 // =============================================================================
+// INPUT EXTRACTION (noisy paste from WhatsApp, etc.)
+// =============================================================================
+//
+// When the user pastes a full line, coordinates may be in the middle of text.
+// We try to extract a substring that looks like NZTM, DDD, or DMS/DDM and parse that.
+// -----------------------------------------------------------------------------
+
+/** Normalize pasted text: trim, collapse whitespace and newlines. */
+function normalizeInput(raw) {
+    if (typeof raw !== 'string') return '';
+    return raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Return candidate substrings that might contain coordinates.
+ * Tries: NZTM pair, DDD pair in NZ range, two-number span, then full normalized string.
+ */
+function getCoordinateCandidates(raw) {
+    const norm = normalizeInput(raw);
+    const candidates = [];
+
+    // 1. NZTM: E 1,000,000–1,800,000 ; N 4,700,000–6,200,000 (approx)
+    const nztmRe = /\b(1[0-7]\d{5,6})\s*[,;\s]+\s*(4[7-9]\d{5}|5\d{6}|6[0-2]\d{5})\b/;
+    const nztmMatch = norm.match(nztmRe);
+    if (nztmMatch) candidates.push(nztmMatch[1] + ' ' + nztmMatch[2]);
+
+    // 2. DDD for NZ: lat -33 to -48, lon 166–179
+    const dddRe = /(-?(?:3[3-9]|4[0-8])\.\d+)\s*[,;\s]+\s*(1[6-7][0-9]\.\d+)/;
+    const dddMatch = norm.match(dddRe);
+    if (dddMatch) candidates.push(dddMatch[1] + ', ' + dddMatch[2]);
+
+    // 3. Any two numbers that could be lat,lon
+    const twoNumRe = /(-?\d{1,3}\.?\d*)\s*[,;\s]+\s*(-?\d{1,3}\.?\d*)/;
+    const twoNumMatch = norm.match(twoNumRe);
+    if (twoNumMatch) candidates.push(twoNumMatch[1] + ', ' + twoNumMatch[2]);
+
+    // 4. Minimal span: first two number-like tokens (e.g. "text 1571000 5178500 more")
+    const numTokenRe = /[-+]?\d+\.?\d*/g;
+    const numbers = [];
+    let m;
+    while ((m = numTokenRe.exec(norm)) !== null) numbers.push({ start: m.index, end: m.index + m[0].length });
+    if (numbers.length >= 2) {
+        candidates.push(norm.substring(numbers[0].start, numbers[1].end));
+    }
+
+    // 5. Span from first to last number
+    if (numbers.length >= 2) {
+        const span = norm.substring(numbers[0].start, numbers[numbers.length - 1].end);
+        if (!candidates.includes(span)) candidates.push(span);
+    }
+
+    if (norm.length > 0 && !candidates.includes(norm)) candidates.push(norm);
+    return candidates;
+}
+
+/**
+ * Extract and parse coordinates from noisy input. Tries each candidate until one parses.
+ * @returns {{ cleaned: string, result: { lat: number, lon: number } | null }}
+ */
+function extractAndParse(raw) {
+    const trimmed = (typeof raw === 'string' ? raw : '').trim();
+    if (!trimmed) return { cleaned: '', result: null };
+    const candidates = getCoordinateCandidates(trimmed);
+    for (const c of candidates) {
+        const result = flexibleParse(c);
+        if (result != null) return { cleaned: c, result };
+    }
+    return { cleaned: trimmed, result: null };
+}
+
+// =============================================================================
 // COORDINATE INPUT PARSER (flexible format)
 // =============================================================================
 //
@@ -474,10 +596,21 @@ async function processCoordinates() {
         if (btn) btn.innerText = "Processing...";
 
         const rawInput = inputEl.value.trim();
-        const res = flexibleParse(rawInput);
-        if (!res) throw new Error("Format error. Check your coordinates.");
+        const { cleaned, result: res } = extractAndParse(rawInput);
+        if (!res) throw new Error("Could not find valid coordinates in the pasted text. Try pasting only the numbers (e.g. -43.54, 172.64 or NZTM E N).");
         targetLat = res.lat;
         targetLng = res.lon;
+
+        // If we extracted from noisy text, show what we used (optional: replace field so user sees)
+        if (cleaned && cleaned !== rawInput && cleaned.length < rawInput.length) {
+            inputEl.value = cleaned;
+        }
+
+        const validation = validateCoordinates(targetLat, targetLng);
+        const validationWarning = validation.ok ? '' : `\n⚠ CHECK: ${validation.message}\n`;
+        if (!validation.ok && typeof alert === 'function') {
+            alert(validation.message + "\n\nReport will still be shown — please check the coordinates.");
+        }
 
         const nztm = latLonToNZTM(targetLat, targetLng);
         const sheet = getTopo50Sheet(nztm.e, nztm.n);
@@ -529,7 +662,7 @@ async function processCoordinates() {
         const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
 
         const report = `ARC LOCATION REPORT
-----------------------
+----------------------${validationWarning}
 TIME  :   ${new Date().toLocaleString('en-NZ', { hour12: false })}
 ALT   :   ${alti}${vectorReport}
 

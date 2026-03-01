@@ -473,7 +473,8 @@ function normalizeInput(raw) {
 
 /**
  * Return candidate substrings that might contain coordinates.
- * Tries: NZTM pair, DDD pair in NZ range, two-number span, then full normalized string.
+ * Tries: NZTM, DDD, DMS/DDM-style span, two-number spans, then full normalized string.
+ * DMS/DDM need hemisphere letters (S/N/E/W) in the string so flexibleParse gets the sign right.
  */
 function getCoordinateCandidates(raw) {
     const norm = normalizeInput(raw);
@@ -489,22 +490,39 @@ function getCoordinateCandidates(raw) {
     const dddMatch = norm.match(dddRe);
     if (dddMatch) candidates.push(dddMatch[1] + ', ' + dddMatch[2]);
 
-    // 3. Any two numbers that could be lat,lon
-    const twoNumRe = /(-?\d{1,3}\.?\d*)\s*[,;\s]+\s*(-?\d{1,3}\.?\d*)/;
-    const twoNumMatch = norm.match(twoNumRe);
-    if (twoNumMatch) candidates.push(twoNumMatch[1] + ', ' + twoNumMatch[2]);
-
-    // 4. Minimal span: first two number-like tokens (e.g. "text 1571000 5178500 more")
+    // 3. DMS/DDM-style: substring containing 4–6 numbers and ° or ' or " (captures S/N/E/W by extending span)
     const numTokenRe = /[-+]?\d+\.?\d*/g;
     const numbers = [];
     let m;
     while ((m = numTokenRe.exec(norm)) !== null) numbers.push({ start: m.index, end: m.index + m[0].length });
+
+    if (numbers.length >= 4 && numbers.length <= 6) {
+        const hasDmsChars = /[°'"]/.test(norm) || /\d+\s+\d+\.\d+/.test(norm);
+        if (hasDmsChars) {
+            const start = Math.max(0, numbers[0].start - 6);
+            const end = Math.min(norm.length, numbers[numbers.length - 1].end + 6);
+            const extended = norm.substring(start, end).trim();
+            if (extended && !candidates.includes(extended)) candidates.push(extended);
+        }
+    }
+
+    // 4. Any two numbers that could be lat,lon
+    const twoNumRe = /(-?\d{1,3}\.?\d*)\s*[,;\s]+\s*(-?\d{1,3}\.?\d*)/;
+    const twoNumMatch = norm.match(twoNumRe);
+    if (twoNumMatch) candidates.push(twoNumMatch[1] + ', ' + twoNumMatch[2]);
+
+    // 5. Minimal span: first two number-like tokens (e.g. "text 1571000 5178500 more")
     if (numbers.length >= 2) {
         candidates.push(norm.substring(numbers[0].start, numbers[1].end));
     }
 
-    // 5. Span from first to last number
+    // 6. Span from first to last number, extended to include S/N/E/W and ° ' " (for DMS/DDM in middle of line)
     if (numbers.length >= 2) {
+        const start = Math.max(0, numbers[0].start - 5);
+        const end = Math.min(norm.length, numbers[numbers.length - 1].end + 5);
+        const spanExtended = norm.substring(start, end).trim();
+        if (spanExtended && !candidates.includes(spanExtended)) candidates.push(spanExtended);
+
         const span = norm.substring(numbers[0].start, numbers[numbers.length - 1].end);
         if (!candidates.includes(span)) candidates.push(span);
     }
@@ -564,7 +582,7 @@ function flexibleParse(input) {
     const part1 = clean.substring(0, stringHalfIndex);
     const part2 = clean.substring(stringHalfIndex);
 
-    /** Convert one half (array of 1–3 numbers) to decimal degrees; sign from raw text (S/W or minus). */
+    /** Convert one half (1–3 numbers) to decimal degrees. Sign: part1 uses S/W or minus (lat); part2 uses W or minus (lon). */
     function convertSegmentToDec(arr, rawText) {
         let d = Math.abs(parseFloat(arr[0] || 0));
         let m = (parseFloat(arr[1] || 0)) / 60;

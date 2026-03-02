@@ -37,7 +37,7 @@ const MAG_DEC = 23.5;
 // =============================================================================
 
 const ALT_CACHE_KEY = 'arc_alt_cache';
-const HISTORY_KEY = 'arc_history';
+const HISTORY_KEY = 'arc_history_v2';
 const HISTORY_MAX = 10;
 
 // -----------------------------------------------------------------------------
@@ -89,10 +89,10 @@ function getHistory() {
 }
 
 /** Add an entry to history; dedupe by same position (4-decimal key), keep last HISTORY_MAX. */
-function addToHistory(entry) {
+function addToHistory(newEntry) {
     let list = getHistory();
-    const key = altCacheKey(entry.lat, entry.lng);
-    list = [entry].concat(list.filter(e => altCacheKey(e.lat, e.lng) !== key));
+    const newKey = `${altCacheKey(newEntry.lat, newEntry.lng)}`;
+    list = [newEntry].concat(list.filter(e => `${altCacheKey(e.lat, e.lng)}` !== newKey));
     list = list.slice(0, HISTORY_MAX);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
     renderHistory();
@@ -121,7 +121,7 @@ function renderHistory() {
     el.innerHTML = list.map((e, i) => {
         const displayCoords = e.originalInput || e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
         const labelOneLine = displayCoords.replace(/\s+/g, ' ').trim();
-        const label = `${labelOneLine} — ${e.alti || '—'}`;
+        const label = `${labelOneLine} — ${e.alti || '—'} ${e.generatedTime}`;
         return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-index="${i}" title="Tap to restore">${escapeHtml(label)}</button>`;
     }).join('');
 }
@@ -138,7 +138,7 @@ function restoreHistoryEntry(index) {
     if (input) {
         input.value = toRestore;
         input.removeAttribute('readonly');
-        processCoordinates();
+        processCoordinates(entry);
     }
 }
 
@@ -606,26 +606,39 @@ function flexibleParse(input) {
  * Parse input, compute NZTM/sheet/ref, optional vector from GPS, altitude (cache or API),
  * build report text and map links, update DOM and history.
  */
-async function processCoordinates() {
+async function processCoordinates(historyEntry) {
     const btn = document.getElementById('genBtn');
     const inputEl = document.getElementById('combinedInput');
     if (!inputEl) return;
+
+    let rawInput;
+    let timeGenerated;
+    if (historyEntry) {
+        rawInput = historyEntry.originalInput;
+        timeGenerated = historyEntry.generatedTime;
+    } else {
+        rawInput = inputEl.value.trim();
+        timeGenerated = new Date().toLocaleString('en-NZ', { hour12: false });
+    }
+
+    
     try {
         if (btn) btn.innerText = "Processing...";
 
-        const rawInput = inputEl.value.trim();
-        const { cleaned, result: res } = extractAndParse(rawInput);
-        if (!res) throw new Error("Could not find valid coordinates in the pasted text. Try pasting only the numbers (e.g. -43.54, 172.64 or NZTM E N).");
+        const { cleaned: cleanedParsedInput, result: res } = extractAndParseCoords(rawInput);
+        if (!res) 
+            throw new Error("Could not find valid coordinates in the pasted text. Try pasting only the numbers (e.g. -43.54, 172.64 or NZTM E1571000, N5178500).");
+
         targetLat = res.lat;
         targetLng = res.lon;
 
         // If we extracted from noisy text, show what we used (optional: replace field so user sees)
-        if (cleaned && cleaned !== rawInput && cleaned.length < rawInput.length) {
-            inputEl.value = cleaned;
+        if (cleanedParsedInput && cleanedParsedInput !== rawInput && cleanedParsedInput.length < rawInput.length) {
+            inputEl.value = cleanedParsedInput;
         }
 
         const validation = validateCoordinates(targetLat, targetLng);
-        const validationWarning = validation.ok ? '' : `\n⚠ CHECK: ${validation.message}\n`;
+        const validationWarning = validation.ok ? '' : `\n⚠ CHECK suspicious values: ${validation.message}\n`;
         if (!validation.ok && typeof alert === 'function') {
             alert(validation.message + "\n\nReport will still be shown — please check the coordinates.");
         }
@@ -652,7 +665,7 @@ async function processCoordinates() {
         }
 
         // Altitude: use cache first (offline); else fetch with timeout so we don't hang when offline
-        let alti = getAltFromCache(targetLat, targetLng);
+        let alti = historyEntry ? historyEntry.alti : getAltFromCache(targetLat, targetLng);
         if (alti == null) {
             alti = "Checking...";
             try {
@@ -678,10 +691,10 @@ async function processCoordinates() {
         const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
         const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
         const yrNoUrl   = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
-
+   
         const report = `ARC LOCATION REPORT
 ----------------------${validationWarning}
-TIME  :   ${new Date().toLocaleString('en-NZ', { hour12: false })}
+TIME  :   ${timeGenerated}
 ALT   :   ${alti}${vectorReport}
 
 --Topo50 GRID Ref+Sheet (For Radio comms):
@@ -702,7 +715,8 @@ YR.no:   ${yrNoUrl}`;
 
         const reportContent = document.getElementById('reportContent');
         if (reportContent) reportContent.innerText = report;
-        addToHistory({ lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: rawInput });
+        newEntry = { generatedTime: timeGenerated, lat: targetLat, lng: targetLng, alti, ddd: `${latF}, ${lngF}`, originalInput: cleanedParsedInput };
+        addToHistory(newEntry);
 
         const topoLink = document.getElementById('topoLink');
         const googleLink = document.getElementById('googleLink');
@@ -829,7 +843,7 @@ function getCurrentLocation() {
         return;
     }
     document.getElementById('combinedInput').value = `${myLat.toFixed(6)}, ${myLng.toFixed(6)}`;
-    processCoordinates();
+    processCoordinates(null);
 }
 
 /** Clear the coordinate input and hide the result area. */

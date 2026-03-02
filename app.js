@@ -690,10 +690,10 @@ ALT   :   ${alti}${vectorReport}
 SHEET: ${sheet}  REF: ${gE} ${gN}
 
 --COORDINATES:
-NZTM2000  :   E${nztm.e} N${nztm.n}
+NZTM2000  :   ${nztm.e}, ${nztm.n}
 DDD   :   ${targetLat.toFixed(6)}, ${targetLng.toFixed(6)}
-DMS   :   ${toDMS(targetLat, true)} ${toDMS(targetLng, false)}
-DDM   :   ${toDDM(targetLat, true)} ${toDDM(targetLng, false)}
+DMS   :   ${toDMS(targetLat, true)}, ${toDMS(targetLng, false)}
+DDM   :   ${toDDM(targetLat, true)}, ${toDDM(targetLng, false)}
 
 --LINKS:
 NZ TOPO: ${topoUrl}

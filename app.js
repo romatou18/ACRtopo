@@ -465,6 +465,30 @@ function getTopo50Sheet(e, n) {
 // We try to extract a substring that looks like NZTM, DDD, or DMS/DDM and parse that.
 // -----------------------------------------------------------------------------
 
+function categorizeCoordinates(inputText) {
+    // Regex with Named Capturing Groups for each format
+    const regex = /(?<DDD>-?\d{1,3}\.\d+,\s*-?[\d\.]+)|(?<DMS>[NSEW]\d{1,3}°\d{1,2}'\d{1,2},?\s*[NSEW]\d{1,3}°\d{1,2}'\d{1,2})|(?<DDM>[NSEW]\d{1,3}\s\d{1,2}\.\d+[NSEW]?,\s*[NSEW]\d{1,3}\s\d{1,2}\.\d+)|(?<NZTM>\b(?:E?\s*)\d{7},\s*(?:N?\s*)\d{7}\b)/gi;
+
+    const results = [];
+    let match;
+
+    // Iterate through all matches in the text
+    while ((match = regex.exec(inputText)) !== null) {
+        // Find which named group was triggered
+        const type = Object.keys(match.groups).find(key => match.groups[key] !== undefined);
+        
+        results.push({
+            type: type,
+            value: match[0].trim()
+        });
+    }
+
+    return results;
+}
+
+
+
+
 /** Normalize pasted text: trim, collapse whitespace and newlines. */
 function normalizeInput(raw) {
     if (typeof raw !== 'string') return '';
@@ -472,77 +496,40 @@ function normalizeInput(raw) {
 }
 
 /**
- * Return candidate substrings that might contain coordinates.
- * Tries: NZTM, DDD, DMS/DDM-style span, two-number spans, then full normalized string.
- * DMS/DDM need hemisphere letters (S/N/E/W) in the string so flexibleParse gets the sign right.
- */
-function getCoordinateCandidates(raw) {
-    const norm = normalizeInput(raw);
-    const candidates = [];
-
-    // 1. NZTM: E 1,000,000–1,800,000 ; N 4,700,000–6,200,000 (approx)
-    const nztmRe = /\b(1[0-7]\d{5,6})\s*[,;\s]+\s*(4[7-9]\d{5}|5\d{6}|6[0-2]\d{5})\b/;
-    const nztmMatch = norm.match(nztmRe);
-    if (nztmMatch) candidates.push(nztmMatch[1] + ' ' + nztmMatch[2]);
-
-    // 2. DDD for NZ: lat -33 to -48, lon 166–179
-    const dddRe = /(-?(?:3[3-9]|4[0-8])\.\d+)\s*[,;\s]+\s*(1[6-7][0-9]\.\d+)/;
-    const dddMatch = norm.match(dddRe);
-    if (dddMatch) candidates.push(dddMatch[1] + ', ' + dddMatch[2]);
-
-    // 3. DMS/DDM-style: substring containing 4–6 numbers and ° or ' or " (captures S/N/E/W by extending span)
-    const numTokenRe = /[-+]?\d+\.?\d*/g;
-    const numbers = [];
-    let m;
-    while ((m = numTokenRe.exec(norm)) !== null) numbers.push({ start: m.index, end: m.index + m[0].length });
-
-    if (numbers.length >= 4 && numbers.length <= 6) {
-        const hasDmsChars = /[°'"]/.test(norm) || /\d+\s+\d+\.\d+/.test(norm);
-        if (hasDmsChars) {
-            const start = Math.max(0, numbers[0].start - 6);
-            const end = Math.min(norm.length, numbers[numbers.length - 1].end + 6);
-            const extended = norm.substring(start, end).trim();
-            if (extended && !candidates.includes(extended)) candidates.push(extended);
-        }
-    }
-
-    // 4. Any two numbers that could be lat,lon
-    const twoNumRe = /(-?\d{1,3}\.?\d*)\s*[,;\s]+\s*(-?\d{1,3}\.?\d*)/;
-    const twoNumMatch = norm.match(twoNumRe);
-    if (twoNumMatch) candidates.push(twoNumMatch[1] + ', ' + twoNumMatch[2]);
-
-    // 5. Minimal span: first two number-like tokens (e.g. "text 1571000 5178500 more")
-    if (numbers.length >= 2) {
-        candidates.push(norm.substring(numbers[0].start, numbers[1].end));
-    }
-
-    // 6. Span from first to last number, extended to include S/N/E/W and ° ' " (for DMS/DDM in middle of line)
-    if (numbers.length >= 2) {
-        const start = Math.max(0, numbers[0].start - 5);
-        const end = Math.min(norm.length, numbers[numbers.length - 1].end + 5);
-        const spanExtended = norm.substring(start, end).trim();
-        if (spanExtended && !candidates.includes(spanExtended)) candidates.push(spanExtended);
-
-        const span = norm.substring(numbers[0].start, numbers[numbers.length - 1].end);
-        if (!candidates.includes(span)) candidates.push(span);
-    }
-
-    if (norm.length > 0 && !candidates.includes(norm)) candidates.push(norm);
-    return candidates;
-}
-
-/**
  * Extract and parse coordinates from noisy input. Tries each candidate until one parses.
  * @returns {{ cleaned: string, result: { lat: number, lon: number } | null }}
  */
-function extractAndParse(raw) {
-    const trimmed = (typeof raw === 'string' ? raw : '').trim();
-    if (!trimmed) return { cleaned: '', result: null };
-    const candidates = getCoordinateCandidates(trimmed);
-    for (const c of candidates) {
-        const result = flexibleParse(c);
-        if (result != null) return { cleaned: c, result };
+function extractAndParseCoords(rawUnfilteredText) {
+    const trimmed = (typeof rawUnfilteredText === 'string' ? rawUnfilteredText : '').trim();
+    if (!trimmed) 
+        return { cleaned: '', result: null };
+
+    const foundCoords = categorizeCoordinates(rawUnfilteredText);
+
+    for (const f of foundCoords) {
+        if (f.type === 'NZTM') {
+            const result = flexibleParse(f.value);
+            if (result != null) 
+                return { cleaned: f.value, result };
+            }
+    
+        if (f.type === 'DDD') {
+            const result = flexibleParse(f.value);
+            if (result != null) 
+                return { cleaned: f.value, result };
+        }
+        if (f.type === 'DMS') {
+            const result = flexibleParse(f.value);
+            if (result != null) 
+                return { cleaned: f.value, result };
+        }
+        if (f.type === 'DDM') {
+            const result = flexibleParse(f.value);
+            if (result != null) 
+                return { cleaned: f.value, result };
+        }
     }
+
     return { cleaned: trimmed, result: null };
 }
 
@@ -571,6 +558,7 @@ function flexibleParse(input) {
     const nums = clean.match(/[-+]?\d*\.?\d+/g);
     if (!nums || nums.length < 2) return null;
 
+    // NZTM
     // Two numbers only and first > 900000 → treat as NZTM E, N
     if (nums.length === 2 && parseFloat(nums[0]) > 900000) {
         return nztmToLatLon(parseFloat(nums[0]), parseFloat(nums[1]));
@@ -583,18 +571,19 @@ function flexibleParse(input) {
     const part2 = clean.substring(stringHalfIndex);
 
     /** Convert one half (1–3 numbers) to decimal degrees. Sign: part1 uses S/W or minus (lat); part2 uses W or minus (lon). */
-    function convertSegmentToDec(arr, rawText) {
+    function convertDMSSegmentToDec(arr, rawText) {
         let d = Math.abs(parseFloat(arr[0] || 0));
         let m = (parseFloat(arr[1] || 0)) / 60;
         let s = (parseFloat(arr[2] || 0)) / 3600;
         let res = d + m + s;
-        if (rawText.includes('-') || /[SwW]/.test(rawText)) res = -res;
+        if (rawText.includes('-') || /[SwW]/.test(rawText)) 
+            res = -res;
         return res;
     }
 
     return {
-        lat: convertSegmentToDec(nums.slice(0, midIndex), part1),
-        lon: convertSegmentToDec(nums.slice(midIndex), part2)
+        lat: convertDMSSegmentToDec(nums.slice(0, midIndex), part1),
+        lon: convertDMSSegmentToDec(nums.slice(midIndex), part2)
     };
 }
 

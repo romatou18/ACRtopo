@@ -886,18 +886,62 @@ function handleLogoClick() {
     setTimeout(() => { clickCount = 0; }, 2000);
 }
 
+
 function runUnitTests() {
-    const out = document.getElementById('testOutput');
+    // --- Test Case ---
+    const sampleText = `
+    Some random text here... 
+    Location 1 (DDD): -43.54, 172.64. 
+    Then we have a DMS: S43°32'24, E172°38'24 and 
+    a DDM: S43 32.4S, E172 38.4. 
+    Finally, NZTM: 1571000, 5178500 amidst some noise 12345.
+    `;
+    const out = document.getElementById('coordExample');
     if (!out) return;
-    out.innerHTML = "ENGINE PROJECTION TESTS:<br>";
+    out.innerHTML = "Coordinate conversion & integrity tests:<br>";
     const tests = [
-        { i: "1571000 5178500", label: "NZTM -> DDD", expected: -43.54 },
-        { i: "-43.54, 172.64", label: "DDD -> NZTM", expected: 1571000 }
+        { i: "1571000,5178500", label: "NZTM no letters", expected: { e: 1571000, n: 5178500 } },
+        { i: "E1571000,N5178500", label: "NZTM with letters", expected: { e: 1571000, n: 5178500 } },
+        { i: "-43.54, 172.64", label: "DDD", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "S43°32'24, E172°38'24", label: "DMS", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "S43 32.4S, E172 38.4", label: "DDM", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "Some random text here... Location 1 (DDD): -43.54, 172.64. Then we have a DMS ", label: "DDD", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "Then we have a DMS: S43°32'24, E172°38'24 and a DDM:", label: "DMS", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "and a DDM: S43 32.4S, E172 38.4. Finally, NZTM", label: "DDM", expected: { lat: -43.54, lon: 172.64 } },
+        { i: "Finally, NZTM: 1571000, 5178500 amidst some noise 12345.", label: "DDD", expected: { lat: -43.54, lon: 172.64 } },
     ];
     tests.forEach(test => {
-        const res = flexibleParse(test.i);
-        const val = test.label.includes("DDD") ? res.lat : latLonToNZTM(res.lat, res.lon).e;
-        const pass = Math.abs(val - test.expected) < 5;
-        out.innerHTML += `${pass ? '✅' : '❌'} ${test.label} | Res: ${val.toFixed(2)}<br>`;
+        const res = extractAndParseCoords(test.i).result;
+        let lat, lon;
+        let e, n;
+        let pass = false;
+        let val = null;
+        if (test.label.includes("DDD")) {
+            lat = res.lat;
+            lon = res.lon;
+            val = `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+            pass = Math.abs(lat - test.expected.lat) < 5 && Math.abs(lon - test.expected.lon) < 5;
+        } else if (test.label.includes("NZTM")) {
+            nztm = latLonToNZTM(res.lat, res.lon);
+            expectedDDD = nztmToLatLon(test.expected.e, test.expected.n)
+            val = `${nztm.e}, ${nztm.n}`;
+            pass1 = Math.abs(nztm.e - test.expected.e) < 5 && Math.abs(nztm.n - test.expected.n) < 5;
+            pass2 = Math.abs(res.lat - expectedDDD.lat) < 5 && Math.abs(res.lon - expectedDDD.lon) < 5;
+            pass = pass1 && pass2;
+        } else if (test.label.includes("DMS")) {
+            lat = res.lat;
+            lon = res.lon;
+            val = `${toDMS(lat, true)} ${toDMS(lon, false)}`;
+            pass = Math.abs(lat - test.expected.lat) < 5 && Math.abs(lon - test.expected.lon) < 5;
+        } else if (test.label.includes("DDM")) {
+            lat = res.lat;
+            lon = res.lon;
+            val = `${toDDM(lat, true)} ${toDDM(lon, false)}`;
+            pass = Math.abs(lat - test.expected.lat) < 5 && Math.abs(lon - test.expected.lon) < 5;
+        }
+        
+        expectedLat = test.expected.lat ? test.expected.lat.toFixed(2) : test.expected.e;
+        expectedLon = test.expected.lon ? test.expected.lon.toFixed(2) : test.expected.n;
+        out.innerHTML += `${pass ? '✅' : '❌'} ${test.label} | Res: ${val} Expected: ${expectedLat}, ${expectedLon}<br>`;
     });
 }

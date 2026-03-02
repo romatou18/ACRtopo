@@ -121,7 +121,7 @@ function renderHistory() {
     el.innerHTML = list.map((e, i) => {
         const displayCoords = e.originalInput || e.ddd || `${Number(e.lat).toFixed(6)}, ${Number(e.lng).toFixed(6)}`;
         const labelOneLine = displayCoords.replace(/\s+/g, ' ').trim();
-        const label = `${labelOneLine} — ${e.alti || '—'} ${e.generatedTime}`;
+        const label = `${labelOneLine} — ${e.alti || '—'} — ${e.generatedTime}`;
         return `<button type="button" class="history-item text-left w-full p-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600 text-[10px] font-mono text-slate-300 truncate" data-index="${i}" title="Tap to restore">${escapeHtml(label)}</button>`;
     }).join('');
 }
@@ -607,7 +607,15 @@ async function processCoordinates(historyEntry) {
         timeGenerated = historyEntry.generatedTime;
     } else {
         rawInput = inputEl.value.trim();
-        timeGenerated = new Date().toLocaleString('en-NZ', { hour12: false });
+        const timeStr = new Date().toLocaleString('en-NZ', { 
+            year: '2-digit', month: '2-digit', day: '2-digit', 
+            hour: '2-digit', minute: '2-digit', second: '2-digit', 
+            hour12: false 
+          });
+          
+          // Splits "02/03/26, 18:04:31" into ["02/03/26", "18:04:31"] and reverses it
+          const flipped = timeStr.split(', ').reverse().join(',');
+        timeGenerated = flipped;
     }
 
     
@@ -664,7 +672,7 @@ async function processCoordinates(historyEntry) {
                 const r = await fetch(url, { signal: controller.signal });
                 clearTimeout(timeoutId);
                 const data = await r.json();
-                alti = data.elevation ? `${Math.round(data.elevation[0])}m (AMSL)` : "Not found";
+                alti = data.elevation ? `${Math.round(data.elevation[0])}m` : "Not found";
                 setAltCache(targetLat, targetLng, alti);
             } catch (e) {
                 alti = "Offline";
@@ -684,7 +692,7 @@ async function processCoordinates(historyEntry) {
         const report = `ARC LOCATION REPORT
 ----------------------${validationWarning}
 TIME  :   ${timeGenerated}
-ALT   :   ${alti}${vectorReport}
+ALT   :   ${alti} (AMSL)${vectorReport}
 
 --Topo50 GRID Ref+Sheet (For Radio comms):
 SHEET: ${sheet}  REF: ${gE} ${gN}

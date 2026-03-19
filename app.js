@@ -15,10 +15,15 @@
  */
 
 /** User-visible release label (Index.html help/header placeholders via data-app-version). */
-const APP_VERSION_LABEL = "v1.1";
+const APP_VERSION_LABEL = "v1.2";
 const ALT_CACHE_KEY = "arc_alt_cache";
 const HISTORY_KEY = "arc_history_v2";
 const HISTORY_MAX = 10;
+/** Last CounterAPI value for debug footer (triple-logo); survives offline / failed refresh. */
+const HIT_COUNT_CACHE_KEY = "arc_hit_count_debug";
+const COUNTER_API_HITS_UP =
+  "https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up";
+
 /**
  * Features: Dynamic NZ-wide Declination Lookup & National Geofencing
  */
@@ -1294,15 +1299,40 @@ function handleLogoClick() {
     const footer = document.getElementById("secretFooter");
     if (footer) footer.classList.remove("hidden");
     runUnitTests();
-    fetch("https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up")
-      .then((r) => r.json())
+    const el = document.getElementById("visitCount");
+    let cached = null;
+    try {
+      cached = localStorage.getItem(HIT_COUNT_CACHE_KEY);
+    } catch (_) {
+      /* private mode / quota */
+    }
+    if (el) {
+      if (cached != null && cached !== "") el.textContent = cached;
+    }
+    fetch(COUNTER_API_HITS_UP, { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then((d) => {
-        const el = document.getElementById("visitCount");
-        if (el) el.innerText = d.count;
+        const n = d && d.count;
+        if (!el) return;
+        if (n != null && n !== "") {
+          const s = String(n);
+          el.textContent = s;
+          try {
+            localStorage.setItem(HIT_COUNT_CACHE_KEY, s);
+          } catch (_) {
+            /* ignore */
+          }
+        } else {
+          el.textContent = cached != null && cached !== "" ? cached : "—";
+        }
       })
       .catch(() => {
-        const el = document.getElementById("visitCount");
-        if (el) el.innerText = "Err";
+        if (!el) return;
+        el.textContent =
+          cached != null && cached !== "" ? cached : "Err";
       });
   }
   setTimeout(() => {

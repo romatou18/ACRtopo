@@ -53,8 +53,12 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // Skip tracking/API calls to ensure altitude/hits work normally
-    if (url.hostname.includes('api.')) return;
+    // Do not intercept third-party JSON APIs (avoid SW cache / stale hit counts).
+    const bypassHosts = new Set([
+        'api.open-meteo.com',
+        'api.counterapi.dev',
+    ]);
+    if (bypassHosts.has(url.hostname)) return;
 
     event.respondWith(
         fetch(request)

@@ -15,10 +15,11 @@
  */
 
 /** User-visible release label (Index.html help/header placeholders via data-app-version). */
-const APP_VERSION_LABEL = "v1.0";
-
+const APP_VERSION_LABEL = "v1.1";
+const ALT_CACHE_KEY = "arc_alt_cache";
+const HISTORY_KEY = "arc_history_v2";
+const HISTORY_MAX = 10;
 /**
- * ARC Team Topo Finder - V6.1 (National LandSAR Edition)
  * Features: Dynamic NZ-wide Declination Lookup & National Geofencing
  */
 
@@ -100,9 +101,6 @@ let clickCount = 0;
 // STORAGE KEYS & CONSTANTS (Altitude cache, History)
 // =============================================================================
 
-const ALT_CACHE_KEY = "arc_alt_cache";
-const HISTORY_KEY = "arc_history_v2";
-const HISTORY_MAX = 10;
 
 // -----------------------------------------------------------------------------
 // Altitude cache (localStorage)
@@ -756,9 +754,8 @@ function flexibleParse(input) {
     const latDMS = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
     const lonDMS = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
 
+    //Constructing pairs.
     const ddmPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([EW+-]?)(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
-    // --- 3. CONSTRUCT PAIRS ---
-   
     const ddmRev = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([NS+-]?)(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
 
     const dmsPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
@@ -793,9 +790,8 @@ function flexibleParse(input) {
         const lat = calcDMS(m[6], m[7], m[8], m[5]);
         return { lat, lon, swapped: true, coords: lat + ',' + lon };
     }
-    // CASE: DDD
 
-
+    // CASE: DDD important keep these 2 if in sequence orderered
     if ((m = input.match(reverseDddPair))) {
         return { lat: parseFloat(m[2]), lon: parseFloat(m[1]), swapped: true, coords:m[0]};
     }
@@ -1079,7 +1075,7 @@ async function processCoordinates(historyEntry) {
     const report = `${reportHeader}
 ----------------------${validationWarning}${swapNotice}
 TIME  :   ${timeGenerated}
-ALT   :   ${alti} (AMSL)${vectorReport}
+ALT   :   ${alti} (AMSL) ${vectorReport}
 SUNRISE : ${sunData.sunrise} (NZ time)
 SUNSET  : ${sunData.sunset} (NZ time)
 

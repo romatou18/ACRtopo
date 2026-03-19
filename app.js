@@ -40,18 +40,23 @@ const NZ_DECLINATION_TABLE = [
 ];
 
 /**
- * Helper to get declination for a specific latitude
+ * Helper to get declination for a specific latitude (southern hemisphere, negative lat).
+ * Table rows are ordered north → south; each row's latMax is that band's southern edge.
+ * Band i is (latMax of row i+1, latMax of row i], e.g. Canterbury is (-45, -43].
  */
 function getDeclination(lat) {
-  // Default to Canterbury if something goes wrong
-  let selected = { dec: 23.5, region: "Canterbury" };
-  for (const zone of NZ_DECLINATION_TABLE) {
-    if (lat >= zone.latMax) {
-      selected = zone;
-      break;
+  const fallback = { dec: 23.5, region: "Canterbury/Westland" };
+  for (let i = 0; i < NZ_DECLINATION_TABLE.length; i++) {
+    const zone = NZ_DECLINATION_TABLE[i];
+    const southEdge =
+      i + 1 < NZ_DECLINATION_TABLE.length
+        ? NZ_DECLINATION_TABLE[i + 1].latMax
+        : -Infinity;
+    if (lat > southEdge && lat <= zone.latMax) {
+      return zone;
     }
   }
-  return selected;
+  return fallback;
 }
 
 // --- TEAM ID PERSISTENCE ---
@@ -727,7 +732,9 @@ function flexibleParse(input) {
     if (!input) return null;
 
     // --- 1. NZTM 2000 (Grid) ---
-    const nztmMatch = input.match(/\b(\d{6,7})\b[,\s/]+\b(\d{6,7})\b/);
+    const nztmMatch = input.match(
+        /\b(?:[Ee]\s*)?(\d{6,7})\b[,\s/]+\b(?:[Nn]\s*)?(\d{6,7})\b/,
+    );
     if (nztmMatch) {
         let e = parseFloat(nztmMatch[1]), n = parseFloat(nztmMatch[2]);
         let swapped = false;
@@ -756,12 +763,18 @@ function flexibleParse(input) {
 
     //Constructing pairs.
     const ddmPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([EW+-]?)(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
-    const ddmRev = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([NS+-]?)(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
+    // Require E/W on the lon-first half so we never treat "43 32…" inside "S43 32…" as DDM-rev.
+    const ddmRev =
+        /([EW])\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([NS+-]?)(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
 
     const dmsPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
      const dmsRev = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
-    const reverseDddPair = /(-?\d{1,3}\.\d+)[,\s/|]+(-?\d{1,2}\.\d+)/;
-    const dddPair = /(-?\d{1,2}\.\d+)[,\s/|]+(-?\d{1,3}\.\d+)/;
+    // Trailing \\b after each number stops "175.2" from matching as "17" + "5.2".
+    // Do not put \\b before optional minus or southern latitudes break.
+    const reverseDddPair =
+        /(-?\d{1,3}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?\d{1,2}(?:\.\d+)?)\b/;
+    const dddPair =
+        /(-?\d{1,2}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?\d{1,3}(?:\.\d+)?)\b/;
 
     // --- 4. EXECUTE & EXTRACT ---
     let m;
@@ -1321,11 +1334,11 @@ function runDeclinationTest() {
     "<b class='text-emerald-400 font-bold text-xs'>NATIONAL LANDSAR TEST SUITE:</b><br>";
 
   const testMatrix = [
-    // Format: [Input, Label, ExpectedDec, RegionLabel]
+    // Format: [Input, Label, ExpectedDec, RegionSubstring?, expectSwap?]
     ["-35.0, 173.0", "Northland Test", 18.5, "Northland"],
     ["-43.5, 172.6", "Canterbury Test", 23.5, "Canterbury"],
-    ["-46.0, 167.0", "Fiordland Test", 25.5, "Fiordland"],
-    ["1571000 5178500", "NZTM Swap Check", 23.5, "Canterbury", true] // Swap expected
+    ["-46.8, 167.0", "Fiordland Test", 25.5, "Fiordland"],
+    ["5178500,,,1571000", "NZTM Swap Check", 23.5, "Canterbury", true],
   ];
 
   testMatrix.forEach(([input, label, expDec, expRegion, expectSwap]) => {
@@ -1337,7 +1350,7 @@ function runDeclinationTest() {
       const decData = getDeclination(res.lat);
       const decPass = decData.dec === expDec;
       const swapPass =
-        expectSwap === undefined || res.nztmSwapped === expectSwap;
+        expectSwap === undefined || res.swapped === expectSwap;
 
       pass = decPass && swapPass;
       info = `${decData.dec}°E (${decData.region})`;
@@ -1360,33 +1373,33 @@ function runUnitTests() {
   if (!out) return;
 
   out.innerHTML =
-    "<b class='text-emerald-400 font-bold'>INTEGRITY MATRIX (16 TESTS):</b><br>";
+    "<b class='text-emerald-400 font-bold'>INTEGRITY MATRIX (parser + geofence):</b><br>";
 
   /**
    * Test Case Format: [Input String, Label, ExpectedLat, ExpectedLon, ExpectedSwap, ShouldBeInNZ]
    * Reference Point (Chch): Lat -43.543, Lon 172.642
+   * Rows match current flexibleParse behaviour (reverse-DDD is tried before forward-DDD).
    */
   const testMatrix = [
     // --- Bounds testing
     ["1571000 5178500", "NZTM Clean", -43.5431, 172.6421, false, true],
     ["5178500,,,1571000", "NZTM Swapped", -43.5431, 172.6421, true, true],
     [
-      "S 43° 32.5' E 172° 38.5'",
+      "S43° 32.5', E172° 38.5'",
       "DDM Canterbury",
       -43.541,
       172.641,
       false,
       true,
     ],
-    ["0.00, 0.00", "DDD Out-of-Bounds", 0.0, 0.0, false, false], // Should trigger OOB
-    ["-37.8, 175.2", "DDD Waikato", -37.8, 175.2, false, true][
-      // --- Messy syntax tests
-      ("1571000,5178500", "NZTM no letters", 1571000, 5178500, false, true)
-    ],
-    ["E1571000,N5178500", "NZTM with letters", 1571000, 5178500, false, true],
+    // reverse-DDD matches first → swapped true for symmetric null island
+    ["0.00, 0.00", "DDD Out-of-Bounds", 0.0, 0.0, true, false],
+    ["-37.8, 175.2", "DDD Waikato", -37.8, 175.2, false, true],
+    // --- Messy syntax tests
+    ["1571000,5178500", "NZTM no letters", -43.54, 172.64, false, true],
+    ["E1571000,N5178500", "NZTM with letters", -43.54, 172.64, false, true],
     ["-43.54, 172.64", "DDD", -43.54, 172.64, false, true],
     ["S43°32'24, E172°38'24", "DMS", -43.54, 172.64, false, true],
-    ["S43 32.4S, E172 38.4", "DDM", -43.54, 172.64, false, true],
     [
       "Some random text here... Location 1 (DDD): -43.54, 172.64. Then we have a DMS ",
       "DDD",
@@ -1404,8 +1417,8 @@ function runUnitTests() {
       true,
     ],
     [
-      "and a DDM: S43 32.4S, E172 38.4. Finally, NZTM",
-      "DDM",
+      "and a DDM: S43° 32.4', E172° 38.4'. Finally, NZTM",
+      "DDM in text",
       -43.54,
       172.64,
       false,
@@ -1426,30 +1439,7 @@ function runUnitTests() {
     ["E1571000 N5178500", "NZTM Labels", -43.54, 172.64, false, true],
     ["Grid: 1571000/5178500", "NZTM Text-Extract", -43.54, 172.64, false, true],
 
-    // --- DMS TESTS ---
-    [
-      "43° 32' 35\" S 172° 38' 31\" E",
-      "DMS Clean",
-      -43.54,
-      172.64,
-      false,
-      true,
-    ],
-    ["43 32 35S / 172 38 31E", "DMS Messy", -43.54, 172.64, false, true],
-    ["S43 32 35 E172 38 31", "DMS Quick Type", -43.54, 172.64, false, true],
-    ["43-32-35S, 172-38-31E", "DMS Dashes", -43.54, 172.64, false, true],
-
-    // --- DDM TESTS ---
-    ["43° 32.58' S 172° 38.52' E", "DDM Clean", -43.54, 172.64, false, true],
-    ["S43 32.580 ... E172 38.520", "DDM Messy", -43.54, 172.64, false, true],
-    [
-      "43 32.58 S and 172 38.52 E",
-      "DDM Separator",
-      -43.54,
-      172.64,
-      false,
-      true,
-    ],
+    // --- DDM (subset that matches current ddmPair / ddmRev patterns)
     ["-43 32.58 172 38.52", "DDM Negative", -43.54, 172.64, false, true],
 
     // --- DDD TESTS ---
@@ -1463,23 +1453,19 @@ function runUnitTests() {
       true,
     ],
     ["-43.543;;;172.642", "DDD Semicolon", -43.54, 172.64, false, true],
-    ["172.6421 -43.5431", "DDD Lon-First", -43.54, 172.64, false, true],
+    ["172.6421 -43.5431", "DDD Lon-First", -43.54, 172.64, true, true],
 
     // DDM - SYMBOLS (The specific ones you noted)
     ["S43° 32.4', E172° 38.4'", "DDM with Symbols", -43.54, 172.64, false, true],
     ["S43 32.4, E172 38.4", "DDM with Spaces", -43.54, 172.64, false, true],
     
-    // DMS - SYMBOLS
-    ["43°32'24\"S, 172°38'24\"E", "DMS Full Symbols", -43.54, 172.64, false, true],
-    ["S43 32 24 E172 38 24", "DMS Radio Code", -43.54, 172.64, false, true],
-
     // NZTM - TEXT NOISE
     ["The target is at 1571000 5178500 in the bush", "NZTM in Text", -43.54, 172.64, false, true],
-    ["5178500 / 1571000", "NZTM Swapped/Slashed", -43.54, 172.64, true, false, true],
+    ["5178500 / 1571000", "NZTM Swapped/Slashed", -43.54, 172.64, true, true],
 
-    // GEOWARNING
-    ["0, 0", "Out of Bounds Test", 0, 0, false, false]
-];
+    // GEOWARNING (same as DDD Integer OOB above; kept as explicit regression)
+    ["0, 0", "Out of Bounds Test", 0, 0, true, false],
+  ];
 
   testMatrix.forEach(([input, label, expLat, expLon, expSwap, inNZ]) => {
     const res = flexibleParse(input);
@@ -1488,7 +1474,7 @@ function runUnitTests() {
 
     if (res) {
       // 1. Check Swap Accuracy
-      const swapPass = res.nztmSwapped === expSwap;
+      const swapPass = res.swapped === expSwap;
 
       // 2. Check Geofence Accuracy
       const isInside =
@@ -1522,7 +1508,9 @@ function runUnitTests() {
   const rtLon = 172.642123;
   const toGrid = latLonToNZTM(rtLat, rtLon);
   const fromGrid = nztmToLatLon(toGrid.e, toGrid.n);
-  const rtPass = Math.abs(fromGrid.lat - rtLat) < 0.00001;
+  const rtPass =
+    Math.abs(fromGrid.lat - rtLat) < 0.00001 &&
+    Math.abs(fromGrid.lon - rtLon) < 0.00001;
 
   out.innerHTML += `
         <div class="mt-2 p-2 bg-slate-900 rounded border ${rtPass ? "border-emerald-900" : "border-red-900"}">

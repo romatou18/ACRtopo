@@ -24,6 +24,48 @@ const HIT_COUNT_CACHE_KEY = "arc_hit_count_debug";
 const COUNTER_API_HITS_UP =
   "https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up";
 
+/** Outmap web map zoom (their MapboxMap accepts query zoom 2–24). */
+const OUTMAP_WEB_ZOOM = 14;
+/** Google Play id — used for Android intent: to prefer native app over embedded browser. */
+const OUTMAP_ANDROID_PKG = "com.fxd.Peaks";
+
+/**
+ * Build https://outmap.app/map/?lat=&lng=&zoom= (Mapbox center = [lng,lat] from query).
+ *
+ * Note: Outmap’s Nuxt map mounts before Pinia `defaultMapState` loads; when that arrives,
+ * a `watch(mapCenter)` calls `flyTo` to the user’s saved default — which can override the
+ * URL position (e.g. jump to Europe). We can’t fix that from here; Android intent may open
+ * the native app and behave better; otherwise paste DDD into Outmap search or ask Outmap
+ * to respect query until the user moves the map.
+ */
+function buildOutmapWebUrl(lat, lng, zoom = OUTMAP_WEB_ZOOM) {
+  const latS = Number(lat).toFixed(6);
+  const lngS = Number(lng).toFixed(6);
+  return `https://outmap.app/map/?lat=${latS}&lng=${lngS}&zoom=${zoom}`;
+}
+
+/**
+ * Android: try VIEW intent into Outmap app (same path/query); falls back to full https URL in Chrome.
+ * Other platforms: return true so the anchor’s default navigation runs.
+ */
+function openOutmapLink(ev) {
+  const a = ev?.currentTarget;
+  if (!a?.href) return true;
+  const httpsUrl = a.href;
+  if (!/^https:\/\/outmap\.app\/map\//i.test(httpsUrl)) return true;
+  const ua = navigator.userAgent || "";
+  if (!/android/i.test(ua)) return true;
+  if (typeof ev.preventDefault === "function") ev.preventDefault();
+  try {
+    const u = new URL(httpsUrl);
+    const intent = `intent://${u.hostname}${u.pathname}${u.search}#Intent;scheme=https;package=${OUTMAP_ANDROID_PKG};action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(httpsUrl)};end`;
+    window.location.href = intent;
+  } catch (_) {
+    window.open(httpsUrl, "_blank", "noopener,noreferrer");
+  }
+  return false;
+}
+
 /**
  * Features: Dynamic NZ-wide Declination Lookup & National Geofencing
  */
@@ -1072,10 +1114,7 @@ async function processCoordinates(historyEntry) {
     const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
     const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
     const yrNoUrl = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
-    // Outmap SPA (outmap.app): /map/ reads ?lat=&lng=&zoom= (zoom 2–24) into Mapbox center [lng,lat].
-    // Same https URL may open the installed iOS/Android app if Outmap registered app links for outmap.app.
-    const OUTMAP_WEB_ZOOM = 14;
-    const outmapUrl = `https://outmap.app/map/?lat=${latF}&lng=${lngF}&zoom=${OUTMAP_WEB_ZOOM}`;
+    const outmapUrl = buildOutmapWebUrl(targetLat, targetLng, OUTMAP_WEB_ZOOM);
 
     // 1. Determine Header Title based on Team ID presence
     let reportHeader = "";

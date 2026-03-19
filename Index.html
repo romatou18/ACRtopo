@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARC Team Topo Finder</title>
+    <title>ACR topo Finder</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="manifest" href="/manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/Acrlogo.png">
+
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(() => {});
@@ -37,29 +38,34 @@
 <body class="bg-slate-900 p-4 font-sans text-gray-100" onload="setupHistoryDelegation(); initGPS(); renderHistory();">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 relative">
-        
+
         <button onclick="toggleModal(true)" class="absolute top-4 right-4 text-slate-500 hover:text-emerald-400 no-print">
             Help(?)
         </button>
 
         <div class="text-center no-print">
             <img src="Acrlogo.png" id="logoTrigger" onclick="handleLogoClick()" alt="ARC Logo" class="w-16 h-16 mb-4 mx-auto cursor-pointer active:opacity-50">
-            <h1 class="text-2xl font-bold mb-1 text-emerald-400">ARC Team Topo Finder</h1>
-            <p class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury</p>
+            <h1 class="text-2xl font-bold mb-1 text-emerald-400">ACR topo Finder</h1>
+            <a id="acrLink" target="_blank" href="https://alpinerescuecanterbury.com/" class="text-xs text-slate-400 mb-6 uppercase tracking-wider font-semibold">Alpine Rescue Canterbury app (v6.1)</a>
         </div>
-        
+
         <div class="no-print">
             <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 mb-2 items-stretch">
-                <textarea id="combinedInput" rows="3" 
-                    placeholder="Paste coordinates here..."
-                    class="w-full p-4 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white text-sm min-h-0"></textarea>
+                <textarea id="combinedInput" rows="2"
+                    placeholder=">>> Paste coordinates here <<<"
+                    class="w-full p-1 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white text-sm min-h-0"></textarea>
+            </div>
+            <div class="mb-4 no-print">
+                <input type="text" id="teamIdInput" oninput="saveTeamId()"
+                    placeholder="Optional: Team name (e.g. ACR-ChCH, LANDSAR-1, Police-Canterbury)"
+                    class="w-full p-1 bg-slate-700 border border-slate-600 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-white text-xs min-h-0">
             </div>
             <div class="mb-2">
                 <p id="coordExample" aria-label="Example coordinate formats"
                     class="w-full p-3 bg-slate-800 border border-slate-600 rounded-xl text-slate-400 text-[11px] font-mono whitespace-pre-wrap">Supported formats:
                     DDD: -43.54, 172.64
-                    DMS: S43°32'24, E172°38'24 
-                    DDM: S43 32.4S, E172 38.4
+                    DMS: S43°32'24", E172°38'24"
+                    DDM: S43° 32.4', E172° 38.4'
                     NZTM: 1571000, 5178500
             </p>
             </div>
@@ -74,7 +80,7 @@
                     Clear
                 </button>
             </div>
-            
+
             <div id="gpsStatus" class="text-[10px] text-slate-400 mt-2 text-center font-mono tracking-wide">
                 GPS: Acquiring satellite lock...
             </div>
@@ -112,28 +118,48 @@
 
     <div id="instModal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden no-print">
         <div class="bg-slate-800 w-full max-w-sm rounded-2xl border border-slate-600 p-6 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-slate-700 pb-2">ARC Team Instructions</h2>
+            <h2 class="text-xl font-bold text-emerald-400 mb-4 border-b border-slate-700 pb-2">ARC Topo app help (v6.1)</h2>
+            <p class="text-xs text-emerald-400 mb-4 border-b border-slate-700 pb-2">(v6.1, author: romainsacchettini@outlook.com)</p>
             <div class="space-y-4 text-sm text-slate-300">
                 <section>
                     <h3 class="font-bold text-white uppercase text-xs mb-1">1. Installation of the app on your mobile</h3>
                     <p>Tap "Share" (iOS) or "Settings" (Android) and select <b>"Add to Home Screen"</b>. This allows full offline use in the field.</p>
                 </section>
                 <section>
-                    <h3 class="font-bold text-white uppercase text-xs mb-1">2. Coordinate Input/conversion</h3>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">2. Resilient Coordinate Input/conversion</h3>
                     <p>Paste text from Radio logs or InReach. It handles NZTM (E/N), DDD, DMS, and DDM automatically. Converts the input coordinate to the remaining 4 formats
                         for sharing with the team, Police etc.
+                        The parser is designed for high-pressure environments. You can paste raw text from WhatsApp or InReach; the engine will ignore "messy" punctuation and extract the coordinates automatically.
                     </p>
                 </section>
                 <section>
-                    <h3 class="font-bold text-white uppercase text-xs mb-1">3. The Vector Feature</h3>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">3. Team Identification</h3>
+                    <p>The <b>Team ID</b> is optional. If left blank, the report defaults to a standard "NZ Location Report." Providing an ID is highly recommended for multi-agency or multi-team operations to ensure clear radio and data logs.</p>
+                </section>
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">4. The Vector Feature</h3>
                     <p>On mobile, the app tries to get a 5-second GPS lock. If successful, it calculates the <b>Bearing</b> and <b>Distance</b> from your current location to the target.
                     Including the offset Magnetic North declination, so that you can use the bearing directly from the app/map to the compass in case, and use this app at anytime, provided you
                     have a GPS fix, and get the right Compass bearing without having to worry about manually offsetting the e.g. 23.5 deg E declination in Canterbury.</p>
                 </section>
                 <section>
-                    <h3 class="font-bold text-white uppercase text-xs mb-1">4. Offline Limitations</h3>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">5. Offline Limitations</h3>
                     <p>Coordinates conversion & NZTM math work 100% offline. However, <b>Altitude</b> and <b>External Maps</b> require active 3G/4G mobile data/satellite link.
                     <b>Important: Ensure to load up the app at least once on your mobile</b>, it gets saved for later and ensure offline functions will work on your next mission day!</p>
+                </section>
+
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1">6. Automatic declination offset</h3>
+                    <p><b>Declination:</b> The app detects your latitude and dynamically compensates for magnetic declination (from 18.5°E in Northland to 25.5°E in Fiordland).</p>
+                </section>
+
+                <section>
+                    <h3 class="font-bold text-white uppercase text-xs mb-1 text-amber-400">7. Coordinate sanity & validation</h3>
+                    <ul class="list-disc ml-4 space-y-1 text-xs">
+                        <li><b> - NZTM N/E Auto-Swap:</b> If NZTM Northing is entered before Easting, the app detects and corrects it with a warning.</li>
+                        <li><b> - Geofencing checks for NZ:</b> Coordinates outside the NZ Zone will trigger a warning</li>
+                        <li><b> - Integrity:</b> Mathematically impossible coordinates are rejected to prevent navigation errors.</li>
+                    </ul>
                 </section>
             </div>
             <button onclick="toggleModal(false)" class="mt-6 w-full bg-emerald-600 text-white font-bold py-3 rounded-xl">Got it</button>

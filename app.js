@@ -722,7 +722,7 @@ function flexibleParse(input) {
         if (e > 3000000) { [e, n] = [n, e]; swapped = true; }
         if (e > 1000000 && e < 2100000 && n > 4700000 && n < 6200000) {
             const c = nztmToLatLon(e, n);
-            return { ...c, nztmSwapped: swapped };
+            return { ...c, nztmSwapped: swapped, coords: nztmMatch[0]};
         }
     }
 
@@ -742,8 +742,8 @@ function flexibleParse(input) {
 
     const dmsPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
      const dmsRev = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
-    const dddPair = /(-?\d{1,3}\.\d+)[,\s/|]+(-?\d{1,2}\.\d+)/;
-    const reverseDddPair = /(-?\d{1,2}\.\d+)[,\s/|]+(-?\d{1,3}\.\d+)/;
+    const reverseDddPair = /(-?\d{1,3}\.\d+)[,\s/|]+(-?\d{1,2}\.\d+)/;
+    const dddPair = /(-?\d{1,2}\.\d+)[,\s/|]+(-?\d{1,3}\.\d+)/;
 
     // --- 4. EXECUTE & EXTRACT ---
     let m;
@@ -773,13 +773,15 @@ function flexibleParse(input) {
         return { lat, lon, nztmSwapped: true, coords: m[0]  };
     }
     // CASE: DDD
-    if ((m = input.match(dddPair))) {
-        return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), nztmSwapped: false };
-    }
+
 
     if ((m = input.match(reverseDddPair))) {
         return { lat: parseFloat(m[2]), lon: parseFloat(m[1]), nztmSwapped: true };
     }
+    if ((m = input.match(dddPair))) {
+        return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), nztmSwapped: false };
+    }
+
 
     return null;
 }

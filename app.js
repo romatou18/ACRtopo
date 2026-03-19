@@ -146,6 +146,23 @@ let targetLng = null;
 let myLat = null;
 let myLng = null;
 
+/** Last reported GPS horizontal accuracy (m), for live vector widget. */
+let lastGpsAccuracyM = null;
+
+let liveVectorIntervalId = null;
+/** Cached vector for compass arrow updates between 10s ticks. */
+let liveVectorCachedVector = null;
+let liveVectorCompassMode = false;
+let liveVectorCompassHeading = null;
+let liveVectorOrientationListenerAttached = false;
+let liveVectorRafPending = false;
+
+/** Refresh live vector UI on this interval (saves battery vs every GPS tick). */
+const LIVE_VECTOR_INTERVAL_MS = 10000;
+
+/** User closed the live vector bar; do not auto-reopen until the next successful report. */
+let liveVectorUserDismissed = false;
+
 /** Secret logo click counter for debug panel. */
 let clickCount = 0;
 
@@ -384,6 +401,49 @@ function validateCoordinates(lat, lon) {
     };
   }
   return { ok: true };
+}
+
+/**
+ * Initial bearing/distance from your position to the target (great-circle).
+ * Declination is taken at the target latitude (same as the printed report).
+ * @returns {{ distKm: string, gridBearing: number, magneticBearing: number, dec: number, region: string } | null}
+ */
+function computeGpsVectorToTarget(fromLat, fromLng, toLat, toLng) {
+  if (
+    fromLat == null ||
+    fromLng == null ||
+    toLat == null ||
+    toLng == null
+  ) {
+    return null;
+  }
+  const declinationData = getDeclination(toLat);
+  const currentMagDec = declinationData.dec;
+  const dLat = (toLat - fromLat) * PI_div_180_deg;
+  const dLon = (toLng - fromLng) * PI_div_180_deg;
+  const a_v =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(fromLat * PI_div_180_deg) *
+      Math.cos(toLat * PI_div_180_deg) *
+      Math.sin(dLon / 2) ** 2;
+  const distKm = (
+    EarthDiamKm * Math.atan2(Math.sqrt(a_v), Math.sqrt(1 - a_v))
+  ).toFixed(2);
+  const y_v = Math.sin(dLon) * Math.cos(toLat * PI_div_180_deg);
+  const x_v =
+    Math.cos(fromLat * PI_div_180_deg) * Math.sin(toLat * PI_div_180_deg) -
+    Math.sin(fromLat * PI_div_180_deg) *
+      Math.cos(toLat * PI_div_180_deg) *
+      Math.cos(dLon);
+  const gridBearing = ((Math.atan2(y_v, x_v) * 180) / Math.PI + 360) % 360;
+  const magneticBearing = (gridBearing - currentMagDec + 360) % 360;
+  return {
+    distKm,
+    gridBearing,
+    magneticBearing,
+    dec: currentMagDec,
+    region: declinationData.region,
+  };
 }
 
 /**
@@ -1051,36 +1111,15 @@ async function processCoordinates(historyEntry) {
       .padStart(3, "0");
 
     // Vector (distance + bearing) from current GPS position to target
-    // 1. DYNAMIC DECLINATION LOOKUP
-    const declinationData = getDeclination(targetLat);
-    const currentMagDec = declinationData.dec;
-    // 2. VECTOR CALCULATION (Using dynamic declination)
     let vectorReport = "VECTOR: No GPS lock (No vector generated)";
-
-    if (myLat != null && myLng != null) {
-      const dLat = (targetLat - myLat) * PI_div_180_deg;
-      const dLon = (targetLng - myLng) * PI_div_180_deg;
-      const a_v =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(myLat * PI_div_180_deg) *
-          Math.cos(targetLat * PI_div_180_deg) *
-          Math.sin(dLon / 2) ** 2;
-      const dist = (
-        EarthDiamKm * Math.atan2(Math.sqrt(a_v), Math.sqrt(1 - a_v))
-      ).toFixed(2);
-
-      const y_v = Math.sin(dLon) * Math.cos(targetLat * PI_div_180_deg);
-      const x_v =
-        Math.cos(myLat * PI_div_180_deg) *
-          Math.sin(targetLat * PI_div_180_deg) -
-        Math.sin(myLat * PI_div_180_deg) *
-          Math.cos(targetLat * PI_div_180_deg) *
-          Math.cos(dLon);
-
-      const gridBearing = ((Math.atan2(y_v, x_v) * 180) / Math.PI + 360) % 360;
-      const magneticBearing = (gridBearing - currentMagDec + 360) % 360;
-
-      vectorReport = `VECTOR: ${dist}km from you\nBearing: ${Math.round(gridBearing)}°(Grid) | ${Math.round(magneticBearing)}°(Mag)\n(${currentMagDec}°E ${declinationData.region} declination (offset for compass use))`;
+    const vecForReport = computeGpsVectorToTarget(
+      myLat,
+      myLng,
+      targetLat,
+      targetLng,
+    );
+    if (vecForReport) {
+      vectorReport = `VECTOR: ${vecForReport.distKm}km from you\nBearing: ${Math.round(vecForReport.gridBearing)}°(Grid) | ${Math.round(vecForReport.magneticBearing)}°(Mag)\n(${vecForReport.dec}°E ${vecForReport.region} declination (offset for compass use))`;
     }
 
     // Altitude: use cache first (offline); else fetch with timeout so we don't hang when offline
@@ -1184,6 +1223,13 @@ Outmap:  ${outmapUrl}`;
     const resultArea = document.getElementById("resultArea");
     if (resultArea) resultArea.classList.remove("hidden");
     if (btn) btn.innerText = "Generate Report";
+
+    liveVectorUserDismissed = false;
+    if (isMobileFieldDevice() && myLat != null && myLng != null) {
+      startLiveVectorWidget();
+    } else {
+      stopLiveVectorWidget();
+    }
   } catch (err) {
     if (typeof alert === "function") alert(err.message);
     if (btn) btn.innerText = "Generate Report";
@@ -1225,6 +1271,203 @@ function toDDM(dec, isLat) {
 // GPS INIT & UI ACTIONS
 // =============================================================================
 
+function isMobileFieldDevice() {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+    navigator.userAgent || "",
+  );
+}
+
+function detachLiveVectorCompass() {
+  if (liveVectorOrientationListenerAttached) {
+    window.removeEventListener(
+      "deviceorientation",
+      onLiveVectorDeviceOrientation,
+      true,
+    );
+    liveVectorOrientationListenerAttached = false;
+  }
+  liveVectorCompassHeading = null;
+}
+
+function stopLiveVectorWidget() {
+  if (liveVectorIntervalId != null) {
+    clearInterval(liveVectorIntervalId);
+    liveVectorIntervalId = null;
+  }
+  detachLiveVectorCompass();
+  liveVectorCompassMode = false;
+  liveVectorCachedVector = null;
+  const w = document.getElementById("liveVectorWidget");
+  if (w) w.classList.add("hidden");
+  const btn = document.getElementById("liveVectorCompassBtn");
+  if (btn) btn.textContent = "Compass-relative arrow";
+  const label = document.getElementById("liveVectorModeLabel");
+  if (label) label.textContent = "Grid N↑";
+}
+
+function applyLiveVectorArrowRotation() {
+  const wrap = document.getElementById("liveVectorArrowWrap");
+  if (!wrap || !liveVectorCachedVector) return;
+  let deg;
+  if (
+    liveVectorCompassMode &&
+    liveVectorCompassHeading != null &&
+    !Number.isNaN(liveVectorCompassHeading)
+  ) {
+    deg = liveVectorCachedVector.magneticBearing - liveVectorCompassHeading;
+  } else {
+    deg = liveVectorCachedVector.gridBearing;
+  }
+  deg = ((deg % 360) + 360) % 360;
+  wrap.style.transform = `rotate(${deg}deg)`;
+}
+
+function onLiveVectorDeviceOrientation(ev) {
+  if (!liveVectorCompassMode) return;
+  if (
+    ev.webkitCompassHeading != null &&
+    !Number.isNaN(ev.webkitCompassHeading)
+  ) {
+    liveVectorCompassHeading = ev.webkitCompassHeading;
+  } else if (ev.alpha != null && !Number.isNaN(ev.alpha)) {
+    liveVectorCompassHeading = (360 - ev.alpha + 360) % 360;
+  } else {
+    return;
+  }
+  if (liveVectorRafPending) return;
+  liveVectorRafPending = true;
+  requestAnimationFrame(() => {
+    liveVectorRafPending = false;
+    applyLiveVectorArrowRotation();
+  });
+}
+
+function updateLiveVectorWidget() {
+  const widget = document.getElementById("liveVectorWidget");
+  if (!widget || widget.classList.contains("hidden")) return;
+  if (targetLat == null || targetLng == null) {
+    stopLiveVectorWidget();
+    return;
+  }
+
+  const distEl = document.getElementById("liveVectorDist");
+  const gridEl = document.getElementById("liveVectorGridDeg");
+  const magEl = document.getElementById("liveVectorMagDeg");
+  const metaEl = document.getElementById("liveVectorMeta");
+
+  if (myLat == null || myLng == null) {
+    liveVectorCachedVector = null;
+    if (distEl) distEl.textContent = "…";
+    if (gridEl) gridEl.textContent = "—";
+    if (magEl) magEl.textContent = "—";
+    if (metaEl) {
+      metaEl.textContent =
+        "Waiting for GPS fix. Open sky helps. Vector updates every 10s.";
+    }
+    return;
+  }
+
+  const v = computeGpsVectorToTarget(
+    myLat,
+    myLng,
+    targetLat,
+    targetLng,
+  );
+  liveVectorCachedVector = v;
+  if (!v) return;
+
+  if (distEl) distEl.textContent = `${v.distKm} km`;
+  if (gridEl) gridEl.textContent = String(Math.round(v.gridBearing));
+  if (magEl) magEl.textContent = String(Math.round(v.magneticBearing));
+  const acc =
+    lastGpsAccuracyM != null ? `±${Math.round(lastGpsAccuracyM)} m` : "—";
+  if (metaEl) {
+    metaEl.textContent = `GPS ${acc} · ${v.dec}°E ${v.region} · 10s refresh`;
+  }
+  applyLiveVectorArrowRotation();
+}
+
+function startLiveVectorWidget() {
+  stopLiveVectorWidget();
+  const widget = document.getElementById("liveVectorWidget");
+  if (!widget) return;
+  widget.classList.remove("hidden");
+  updateLiveVectorWidget();
+  liveVectorIntervalId = window.setInterval(
+    updateLiveVectorWidget,
+    LIVE_VECTOR_INTERVAL_MS,
+  );
+}
+
+function maybeStartLiveVectorAfterGpsUpdate() {
+  if (!isMobileFieldDevice() || liveVectorUserDismissed) return;
+  const ra = document.getElementById("resultArea");
+  if (!ra || ra.classList.contains("hidden")) return;
+  if (targetLat == null || targetLng == null) return;
+  if (myLat == null || myLng == null) return;
+  if (liveVectorIntervalId != null) return;
+  startLiveVectorWidget();
+}
+
+async function toggleLiveVectorCompassMode() {
+  const btn = document.getElementById("liveVectorCompassBtn");
+  if (liveVectorCompassMode) {
+    liveVectorCompassMode = false;
+    detachLiveVectorCompass();
+    if (btn) btn.textContent = "Compass-relative arrow";
+    const label = document.getElementById("liveVectorModeLabel");
+    if (label) label.textContent = "Grid N↑";
+    applyLiveVectorArrowRotation();
+    return;
+  }
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+    try {
+      const st = await DeviceOrientationEvent.requestPermission();
+      if (st !== "granted") {
+        if (typeof alert === "function") {
+          alert("Compass permission was not granted.");
+        }
+        return;
+      }
+    } catch (e) {
+      if (typeof alert === "function") {
+        alert("Compass is not available on this device.");
+      }
+      return;
+    }
+  }
+  liveVectorCompassMode = true;
+  window.addEventListener(
+    "deviceorientation",
+    onLiveVectorDeviceOrientation,
+    true,
+  );
+  liveVectorOrientationListenerAttached = true;
+  if (btn) btn.textContent = "Use grid-N arrow";
+  const label = document.getElementById("liveVectorModeLabel");
+  if (label) label.textContent = "Compass";
+  applyLiveVectorArrowRotation();
+}
+
+function onLiveVectorClose() {
+  liveVectorUserDismissed = true;
+  stopLiveVectorWidget();
+}
+
+function setupLiveVectorWidgetUi() {
+  const closeBtn = document.getElementById("liveVectorClose");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", onLiveVectorClose);
+  }
+  const cBtn = document.getElementById("liveVectorCompassBtn");
+  if (cBtn) {
+    cBtn.addEventListener("click", () => toggleLiveVectorCompassMode());
+  }
+}
+
 /** Show or hide the instructions modal. */
 function toggleModal(show) {
   const modal = document.getElementById("instModal");
@@ -1241,12 +1484,7 @@ function initGPS() {
   const statusBox = document.getElementById("gpsStatus");
   if (!statusBox) return;
 
-  const isMobile =
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent,
-    );
-
-  if (!isMobile) {
+  if (!isMobileFieldDevice()) {
     statusBox.innerHTML =
       '<span class="text-slate-500">● PC Detected: GPS Vector Disabled</span>';
     return;
@@ -1264,22 +1502,27 @@ function initGPS() {
     (pos) => {
       myLat = pos.coords.latitude;
       myLng = pos.coords.longitude;
+      lastGpsAccuracyM = pos.coords.accuracy;
       statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(pos.coords.accuracy)}m)</span>`;
       navigator.geolocation.watchPosition(
         (wPos) => {
           myLat = wPos.coords.latitude;
           myLng = wPos.coords.longitude;
+          lastGpsAccuracyM = wPos.coords.accuracy;
           statusBox.innerHTML = `<span class="text-emerald-500">● GPS Active (Acc: ${Math.round(wPos.coords.accuracy)}m)</span>`;
+          maybeStartLiveVectorAfterGpsUpdate();
         },
         () => {},
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 },
       );
+      maybeStartLiveVectorAfterGpsUpdate();
     },
     (err) => {
       statusBox.innerHTML =
         '<span class="text-amber-500">● GPS Timeout/No Fix. Vector skipped.</span>';
       myLat = null;
       myLng = null;
+      lastGpsAccuracyM = null;
     },
     { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 },
   );
@@ -1287,11 +1530,7 @@ function initGPS() {
 
 /** Fill input with current GPS position (DDD) and run report. Mobile only. */
 function getCurrentLocation() {
-  const isMobile =
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent,
-    );
-  if (!isMobile) {
+  if (!isMobileFieldDevice()) {
     alert("GPS is disabled on PC. Please type coordinates manually.");
     return;
   }
@@ -1306,6 +1545,10 @@ function getCurrentLocation() {
 
 /** Clear the coordinate input and hide the result area. */
 function clearAll() {
+  stopLiveVectorWidget();
+  liveVectorUserDismissed = false;
+  targetLat = null;
+  targetLng = null;
   const input = document.getElementById("combinedInput");
   const resultArea = document.getElementById("resultArea");
   if (input) input.value = "";

@@ -35,7 +35,7 @@
         }
     </style>
 </head>
-<body class="bg-slate-900 p-4 font-sans text-gray-100" onload="setupHistoryDelegation(); initGPS(); renderHistory();">
+<body class="bg-slate-900 p-4 font-sans text-gray-100" onload="setupHistoryDelegation(); setupLiveVectorWidgetUi(); initGPS(); renderHistory();">
 
     <div class="max-w-md mx-auto bg-slate-800 p-6 rounded-2xl shadow-2xl border border-slate-700 relative">
 
@@ -166,6 +166,37 @@ NZTM: 1571000, 5178500
                 </section>
             </div>
             <button onclick="toggleModal(false)" class="mt-6 w-full bg-emerald-600 text-white font-bold py-3 rounded-xl">Got it</button>
+        </div>
+    </div>
+
+    <!-- Live GPS vector to target (mobile, after report + fix): 10s refresh; optional compass arrow -->
+    <div id="liveVectorWidget" class="no-print fixed z-40 left-1/2 -translate-x-1/2 w-[min(calc(100vw-1.5rem),22rem)] rounded-2xl border border-amber-600/50 bg-slate-900/95 backdrop-blur-sm shadow-2xl p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] hidden" style="bottom: max(1rem, env(safe-area-inset-bottom, 0px));" role="region" aria-label="Live vector to target">
+        <button type="button" id="liveVectorClose" class="absolute top-1.5 right-2 text-slate-500 hover:text-white text-xl leading-none w-8 h-8 flex items-center justify-center rounded-lg" aria-label="Dismiss live vector">×</button>
+        <div class="flex items-stretch gap-3 pr-7">
+            <div class="flex flex-col items-center shrink-0 w-[4.5rem]">
+                <span id="liveVectorModeLabel" class="text-[8px] text-slate-500 uppercase tracking-wide mb-0.5 text-center leading-tight">Grid N↑</span>
+                <div class="relative w-16 h-16 flex items-center justify-center">
+                    <svg class="absolute inset-0 w-16 h-16 text-slate-600 pointer-events-none" viewBox="0 0 100 100" aria-hidden="true">
+                        <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                        <text x="50" y="16" text-anchor="middle" fill="currentColor" font-size="11" font-weight="600">N</text>
+                    </svg>
+                    <div id="liveVectorArrowWrap" class="absolute inset-0 flex items-center justify-center transition-transform duration-300 ease-out" style="transform: rotate(0deg); transform-origin: 50% 50%;">
+                        <svg class="w-12 h-12 text-amber-400 drop-shadow-md" viewBox="0 0 100 100" aria-hidden="true">
+                            <polygon points="50,6 64,44 56,44 56,92 44,92 44,44 36,44" fill="currentColor"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 min-w-0 text-left space-y-0.5">
+                <div id="liveVectorDist" class="text-amber-400 font-bold text-base tabular-nums tracking-tight" aria-live="polite">—</div>
+                <div class="text-[10px] font-mono text-slate-300 leading-snug">
+                    <span class="text-slate-500">Grid</span> <span id="liveVectorGridDeg" class="text-emerald-400">—</span>°
+                    <span class="text-slate-600 mx-0.5">·</span>
+                    <span class="text-slate-500">Mag</span> <span id="liveVectorMagDeg" class="text-emerald-400">—</span>°
+                </div>
+                <p id="liveVectorMeta" class="text-[9px] text-slate-500 leading-snug">…</p>
+                <button type="button" id="liveVectorCompassBtn" class="text-[9px] text-amber-500/90 hover:text-amber-400 underline decoration-dotted text-left mt-1">Compass-relative arrow</button>
+            </div>
         </div>
     </div>
 

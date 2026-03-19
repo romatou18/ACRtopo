@@ -984,6 +984,7 @@ async function processCoordinates(historyEntry) {
     const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
     const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
     const yrNoUrl = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
+    const outmapUrl = `https://outmap.pro/#map=14/${targetLat}/${targetLng}/nz-topo-50`;
 
     // 1. Determine Header Title based on Team ID presence
     let reportHeader = "";
@@ -1011,7 +1012,8 @@ NZ TOPO: ${topoUrl}
 G.Maps:   ${googleUrl}
 G.Earth:  ${earthUrl}
 WINDY.com:${windyUrl}
-YR.no:   ${yrNoUrl}`;
+YR.no:   ${yrNoUrl}
+Outmap:  ${outmapUrl}`;
 
     const reportContent = document.getElementById("reportContent");
     if (reportContent) reportContent.innerText = report;
@@ -1031,6 +1033,7 @@ YR.no:   ${yrNoUrl}`;
     const windyLinkBtn = document.getElementById("windyLinkBtn");
     const yrNoLinkBtn = document.getElementById("yrNoLinkBtn");
     const zoomEarthLink = document.getElementById("zoomEarthLink");
+    const outmapLink = document.getElementById("outmapLink");
 
     if (topoLink) topoLink.href = topoUrl;
     if (googleLink) googleLink.href = googleUrl;
@@ -1038,6 +1041,7 @@ YR.no:   ${yrNoUrl}`;
     if (windyLinkBtn) windyLinkBtn.href = windyUrl;
     if (yrNoLinkBtn) yrNoLinkBtn.href = yrNoUrl;
     if (zoomEarthLink) zoomEarthLink.href = zoomEarthUrl;
+    if (outmapLink) outmapLink.href = outmapUrl;
 
     const resultArea = document.getElementById("resultArea");
     if (resultArea) resultArea.classList.remove("hidden");

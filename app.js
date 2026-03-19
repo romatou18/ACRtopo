@@ -25,7 +25,7 @@ const COUNTER_API_HITS_UP =
   "https://api.counterapi.dev/v1/arc-rescue-canterbury/hits/up";
 
 /** Outmap web map zoom (their MapboxMap accepts query zoom 2–24). */
-const OUTMAP_WEB_ZOOM = 14;
+const OUTMAP_WEB_ZOOM = 24;
 /** Google Play id — used for Android intent: to prefer native app over embedded browser. */
 const OUTMAP_ANDROID_PKG = "com.fxd.Peaks";
 

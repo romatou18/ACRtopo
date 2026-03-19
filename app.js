@@ -14,6 +14,9 @@
  * Dependencies: none. Expects DOM elements (combinedInput, genBtn, reportContent, etc.).
  */
 
+/** User-visible release label (Index.html help/header placeholders via data-app-version). */
+const APP_VERSION_LABEL = "v1.0";
+
 /**
  * ARC Team Topo Finder - V6.1 (National LandSAR Edition)
  * Features: Dynamic NZ-wide Declination Lookup & National Geofencing
@@ -64,8 +67,19 @@ function loadTeamId() {
         document.getElementById('teamIdInput').value = savedId;
     }
 }
-// Call loadTeamId on page init
-window.addEventListener('DOMContentLoaded', loadTeamId);
+
+function applyAppVersionLabels() {
+    document.querySelectorAll("[data-app-version]").forEach((el) => {
+        el.textContent = APP_VERSION_LABEL;
+    });
+}
+
+function onDomContentLoaded() {
+    applyAppVersionLabels();
+    loadTeamId();
+}
+
+window.addEventListener("DOMContentLoaded", onDomContentLoaded);
 
 // =============================================================================
 // GLOBAL STATE

@@ -15,7 +15,7 @@
  */
 
 /** User-visible release label (Index.html help/header placeholders via data-app-version). */
-const APP_VERSION_LABEL = "v1.2";
+const APP_VERSION_LABEL = "v1.2.1";
 const ALT_CACHE_KEY = "arc_alt_cache";
 const HISTORY_KEY = "arc_history_v2";
 const HISTORY_MAX = 10;
@@ -1072,7 +1072,10 @@ async function processCoordinates(historyEntry) {
     const windyUrl = `https://www.windy.com/${latF}/${lngF}`;
     const zoomEarthUrl = `https://zoom.earth/maps/satellite/#view=${latF},${lngF},10z`;
     const yrNoUrl = `https://www.yr.no/en/forecast/daily-table/${latF},${lngF}`;
-    const outmapUrl = `https://outmap.pro/#map=14/${targetLat}/${targetLng}/nz-topo-50`;
+    // Outmap SPA (outmap.app): /map/ reads ?lat=&lng=&zoom= (zoom 2–24) into Mapbox center [lng,lat].
+    // Same https URL may open the installed iOS/Android app if Outmap registered app links for outmap.app.
+    const OUTMAP_WEB_ZOOM = 14;
+    const outmapUrl = `https://outmap.app/map/?lat=${latF}&lng=${lngF}&zoom=${OUTMAP_WEB_ZOOM}`;
 
     // 1. Determine Header Title based on Team ID presence
     let reportHeader = "";

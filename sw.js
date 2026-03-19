@@ -2,7 +2,7 @@
 // - Offline: app works from cache when no connection.
 // - Online: refresh fetches latest version (network-first), then cache is updated for next offline.
 
-const CACHE_NAME = 'arc-topo-finder-v0.9';
+const CACHE_NAME = 'arc-topo-finder-v1.0';
 
 const CRITICAL_ASSETS = [
     '/',
@@ -53,48 +53,34 @@ self.addEventListener('activate', (event) => {
     event.waitUntil(self.clients.claim());
 });
 
-// 3. Fetch: network-first for app shell when online, cache fallback when offline
+// 3. Fetch: Network-First with Cache Fallback
 self.addEventListener('fetch', (event) => {
-    const request = event.request;
-    const url = request.url;
-    const isNav = request.mode === 'navigate';
+    const { request } = event;
+    const url = new URL(request.url);
 
-    if (url.includes('api.open-meteo.com') || url.includes('api.counterapi.dev')) {
-        return;
-    }
+    // Skip tracking/API calls to ensure altitude/hits work normally
+    if (url.hostname.includes('api.')) return;
 
     event.respondWith(
-        (function respond() {
-            // App shell (navigation or same-origin app assets): network-first so refresh gets latest
-            if ((isNav || isAppOrigin(url)) && !url.includes('api.')) {
-                return fetch(request)
-                    .then((res) => {
-                        if (res && res.ok && (isNav || isAppOrigin(url))) {
-                            const clone = res.clone();
-                            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                        }
-                        return res;
-                    })
-                    .catch(() => {
-                        return caches.open(CACHE_NAME).then((cache) => {
-                            if (isNav) return getCachedAppDoc(cache).then((f) => f || new Response(
-                                '<!DOCTYPE html><html><body><p>Offline. Open the app once with data to cache it.</p></body></html>',
-                                { status: 503, statusText: 'Service Unavailable', headers: { 'Content-Type': 'text/html' } }
-                            ));
-                            return cache.match(request);
-                        });
-                    });
-            }
-            // Other (e.g. CDN): network first, then cache
-            return fetch(request)
-                .then((res) => {
-                    if (res && res.ok) {
-                        const clone = res.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        fetch(request)
+            .then((response) => {
+                // If network is good, update the cache and return response
+                if (response && response.status === 200) {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                }
+                return response;
+            })
+            .catch(() => {
+                // NETWORK FAIL: Use Cache
+                return caches.match(request).then((cachedResponse) => {
+                    if (cachedResponse) return cachedResponse;
+                    
+                    // If it's a page navigation and nothing is cached, show offline page
+                    if (request.mode === 'navigate') {
+                        return caches.match('/Index.html');
                     }
-                    return res;
-                })
-                .catch(() => caches.match(request));
-        })()
+                });
+            })
     );
 });

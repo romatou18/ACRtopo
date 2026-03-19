@@ -915,8 +915,6 @@ async function processCoordinates(historyEntry) {
   // 2. Navigation & Safety Logic
   const decData = getDeclination(targetLat);
   const isInsideNZ = (targetLat >= -48 && targetLat <= -34 && targetLng >= 164 && targetLng <= 179.5);
-  const geoWarning = isInsideNZ ? "" : "⚠️ WARNING: OUTSIDE NZ BOUNDS\n";
-  const swapNotice = parseRes.nztmSwapped ? "⚠️ ALERT: GRID N/E WAS SWAPPED\n" : "";
 
   let rawInput;
   let timeGenerated;
@@ -953,8 +951,7 @@ async function processCoordinates(historyEntry) {
       validationWarning =
         "⚠️ WARNING: COORDINATES ARE OUTSIDE NEW ZEALAND BOUNDS.\n";
     }
-
-    const swapNotice = parseRes.nztmSwapped
+    const swapNotice = parseRes.swapped
       ? "⚠️ ALERT: Grid Northing/Easting were swapped automatically.\n"
       : "";
 

@@ -2,17 +2,15 @@
 // - Offline: app works from cache when no connection.
 // - Online: refresh fetches latest version (network-first), then cache is updated for next offline.
 
-const CACHE_NAME = 'arc-topo-finder-v1.0';
+const CACHE_NAME = 'arc-topo-finder-v1.1';
 
 const CRITICAL_ASSETS = [
     '/',
     '/Index.html',
     '/app.js',
+    '/tailwind.playcdn.js',
     '/manifest.json',
     '/Acrlogo.png',
-];
-const OPTIONAL_ASSETS = [
-    'https://cdn.tailwindcss.com'
 ];
 
 const OFFLINE_DOCS = ['/Index.html', '/'];
@@ -29,14 +27,11 @@ function getCachedAppDoc(cache) {
     return OFFLINE_DOCS.reduce((p, path) => p.then((r) => r || cache.match(path)), Promise.resolve(null));
 }
 
-// 1. Install: prime cache for offline; optional assets must not block activation
+// 1. Install: prime cache for offline (same-origin assets only — CDN scripts are unreliable offline)
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => cache.addAll(CRITICAL_ASSETS))
-            .then(() => caches.open(CACHE_NAME).then((cache) =>
-                Promise.allSettled(OPTIONAL_ASSETS.map((url) => cache.add(url)))
-            ))
             .then(() => self.skipWaiting())
     );
 });

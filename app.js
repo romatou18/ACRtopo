@@ -719,10 +719,17 @@ function flexibleParse(input) {
     if (nztmMatch) {
         let e = parseFloat(nztmMatch[1]), n = parseFloat(nztmMatch[2]);
         let swapped = false;
-        if (e > 3000000) { [e, n] = [n, e]; swapped = true; }
+        let original = ''
+        if (e > 3000000) { 
+          [e, n] = [n, e]; 
+          swapped = true; 
+          original = nztmMatch[2] + ', ' + nztmMatch[1]
+        } else {
+          original = nztmMatch[1] + ', ' + nztmMatch[2]
+        }
         if (e > 1000000 && e < 2100000 && n > 4700000 && n < 6200000) {
             const c = nztmToLatLon(e, n);
-            return { ...c, nztmSwapped: swapped, coords: nztmMatch[0]};
+            return { ...c, swapped: swapped, coords: original};
         }
     }
 
@@ -752,34 +759,34 @@ function flexibleParse(input) {
     if ((m = input.match(ddmPair))) {
         const lat = calcDDM(m[2], m[3], m[1]);
         const lon = calcDDM(m[5], m[6], m[4]);
-        return { lat, lon, nztmSwapped: false, coords: m[0] };
+        return { lat, lon, swapped: false, coords: m[0] };
     }
     // CASE: DDM REVERSE
     if ((m = input.match(ddmRev))) {
         const lon = calcDDM(m[2], m[3], m[1]);
         const lat = calcDDM(m[5], m[6], m[4]);
-        return { lat, lon, nztmSwapped: true, coords: m[0]  };
+        return { lat, lon, swapped: true, coords: lat + ',' + lon  };
     }
     // CASE: DMS FORWARD
     if ((m = input.match(dmsPair))) {
         const lat = calcDMS(m[2], m[3], m[4], m[1]);
         const lon = calcDMS(m[6], m[7], m[8], m[5]);
-        return { lat, lon, nztmSwapped: false, coords: m[0]  };
+        return { lat, lon, swapped: false, coords: m[0]  };
     }
     // CASE: DMS REVERSE
     if ((m = input.match(dmsRev))) {
         const lon = calcDMS(m[2], m[3], m[4], m[1]);
         const lat = calcDMS(m[6], m[7], m[8], m[5]);
-        return { lat, lon, nztmSwapped: true, coords: m[0]  };
+        return { lat, lon, swapped: true, coords: lat + ',' + lon };
     }
     // CASE: DDD
 
 
     if ((m = input.match(reverseDddPair))) {
-        return { lat: parseFloat(m[2]), lon: parseFloat(m[1]), nztmSwapped: true };
+        return { lat: parseFloat(m[2]), lon: parseFloat(m[1]), swapped: true, coords:m[0]};
     }
     if ((m = input.match(dddPair))) {
-        return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), nztmSwapped: false };
+        return { lat: parseFloat(m[1]), lon: parseFloat(m[2]), swapped: false, coords: m[0]};
     }
 
 
@@ -799,6 +806,65 @@ function calcDMS(d, m, s, s1) {
     if (/[S-]/i.test(s1 || "") || /[W-]/i.test(s1 || "")) val = -val;
     return val;
 }
+
+/**
+ * ARC Offline Solar Engine
+ * Calculates Civil Sunrise/Sunset for NZ locations without API access.
+ */
+function getSunTimes(lat, lng) {
+    const now = new Date();
+    const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+    const zenith = 90.833; // Standard sunrise/sunset zenith
+    const D2R = Math.PI / 180;
+    const R2D = 180 / Math.PI;
+
+    // 1. Calculate approximate time
+    const lnHour = lng / 15;
+    const tRise = dayOfYear + ((6 - lnHour) / 24);
+    const tSet = dayOfYear + ((18 - lnHour) / 24);
+
+    const compute = (t, isSunrise) => {
+        // Mean anomaly
+        const M = (0.9856 * t) - 3.289;
+        // True longitude
+        let L = M + (1.916 * Math.sin(M * D2R)) + (0.020 * Math.sin(2 * M * D2R)) + 282.634;
+        L = (L + 360) % 360;
+        // Right ascension
+        let RA = R2D * Math.atan(0.91764 * Math.tan(L * D2R));
+        RA = (RA + 360) % 360;
+        // Adjust quadrant
+        const Lquad = Math.floor(L / 90) * 90;
+        const RAquad = Math.floor(RA / 90) * 90;
+        RA = (RA + (Lquad - RAquad)) / 15;
+        // Declination
+        const sinDec = 0.39782 * Math.sin(L * D2R);
+        const cosDec = Math.cos(Math.asin(sinDec));
+        // Local hour angle
+        const cosH = (Math.cos(zenith * D2R) - (sinDec * Math.sin(lat * D2R))) / (cosDec * Math.cos(lat * D2R));
+        
+        if (cosH > 1) return "Always Night";
+        if (cosH < -1) return "Always Day";
+
+        const H = (isSunrise ? 360 - R2D * Math.acos(cosH) : R2D * Math.acos(cosH)) / 15;
+        const T = H + RA - (0.06571 * t) - 6.622;
+        let UT = (T - lnHour + 24) % 24;
+
+        // Convert UT to NZ Time (Standard +12, or use Date offset for DST)
+        // Note: New Zealand is UTC+12 (Standard) or UTC+13 (Daylight Savings)
+        const tzOffset = -now.getTimezoneOffset() / 60;
+        const localTime = (UT + tzOffset + 24) % 24;
+
+        const h = Math.floor(localTime);
+        const m = Math.round((localTime - h) * 60);
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+    };
+
+    return {
+        sunrise: compute(tRise, true),
+        sunset: compute(tSet, false)
+    };
+}
+
 // =============================================================================
 // MAIN PROCESSOR & REPORT GENERATOR
 // =============================================================================
@@ -820,6 +886,10 @@ async function processCoordinates(historyEntry) {
     alert("❌ ERROR: Could not detect valid coordinates.\n\nAccepted formats:\n- NZTM (e.g. 1571000 5178500)\n- DDD (e.g. -43.54, 172.64)\n- DDM (e.g. S43° 32.4', E172° 38.4') - DMS: S43°32'24\", E172°38'24\"");
     return;
   }
+
+  if (parseRes.swapped) {
+        alert("⚠️ COORDINATE SWAP DETECTED\n\nThe input appeared to be 'Northing before Easting' or 'Longitude before Latitude'. The app has corrected this for the report.");
+    }
 
   targetLat = parseRes.lat;
   targetLng = parseRes.lon;
@@ -880,14 +950,7 @@ async function processCoordinates(historyEntry) {
 
     // CHANGE: Capture the swap flag
     const cleanedParsedInput = parseRes.coords
-    //   extractAndParseCoords(rawInput);
-    // if (!res)
-    //   throw new Error(
-    //     "Could not find valid coordinates in the pasted text. Try pasting only the numbers (e.g. -43.54, 172.64 or NZTM E1571000, N5178500).",
-    //   );
 
-    // targetLat = res.lat;
-    // targetLng = res.lon;
 
     // If we extracted from noisy text, show what we used (optional: replace field so user sees)
     if (
@@ -993,10 +1056,18 @@ async function processCoordinates(historyEntry) {
     } else {
         reportHeader = `LOCATION REPORT`;
     }
+
+    // We use a simple calculation or a quick fetch. 
+    // For offline reliability, a simple static calculation is best, 
+    // but here is the logic for the report:
+    const sunData = await getSunTimes(targetLat, targetLng);
+
     const report = `${reportHeader}
 ----------------------${validationWarning}${swapNotice}
 TIME  :   ${timeGenerated}
 ALT   :   ${alti} (AMSL)${vectorReport}
+SUNRISE : ${sunData.sunrise} (NZ time)
+SUNSET  : ${sunData.sunset} (NZ time)
 
 --Topo50 GRID Ref+Sheet (For Radio comms):
 SHEET: ${topoSheet}  REF: ${gridRefE} ${gridRefNorth}

@@ -1795,6 +1795,7 @@ function runUnitTests() {
     ["1571000 5178500", "NZTM Clean", -43.5431, 172.6421, false, true],
     ["5178500,,,1571000", "NZTM Swapped", -43.5431, 172.6421, true, true],
     ["S43° 32.5', E172° 38.5'","DDM Canterbury", -43.541, 172.641,false, true,],
+    ["S43° 32.5', E172° 38.5'E","DDM Canterbury hemi prefix suffix", -43.541, 172.641,false, true,],
 
     ["S43° 32.5', 172° 38.5 E","DDM Canterbury bad punctuation", -43.541, 172.641,false, true,],
     ["s43° 32.5', e172 38.5'E","DDM Canterbury bad punctuation 2", -43.541, 172.641,false, true,],
@@ -1835,6 +1836,7 @@ function runUnitTests() {
     ["S43 32 24 E172 38 24", "DMS spaces only no comma", -43.54, 172.64, false, true],
     ["E172 38 24 S43 32 24", "DMS spaces lon-first", -43.54, 172.64, true, true],
     ["172 38 24 S43 32 24", "DMS spaces lon-first no E prefix", -43.54, 172.64, true, true],
+    ["S42° 57.106' 171° 23.237'E", "DMS hemi prefix suffix", -42.951, 171.387, true, true],
 
     ["43°32'24S, E172°38'24E", "DMS hemi end", -43.54, 172.64, false, true],
     ["43 32'24S, E172°38 24E", "DMS hemi end bad punctuation", -43.54, 172.64, false, true],

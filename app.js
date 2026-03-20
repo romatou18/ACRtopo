@@ -1675,11 +1675,34 @@ function handleLogoClick() {
 // you ensure the tool is smart enough to fix common errors
 // but transparent enough that the user double-checks the source data.
 // =============================================================================
+/** One row for integrity / declination test output (grid: status | label | value). */
+function integrityTestRow(pass, label, rightCol) {
+  const esc =
+    typeof label === "string"
+      ? label
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+      : "";
+  const right =
+    typeof rightCol === "string"
+      ? rightCol
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+      : "";
+  return `<div class="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-x-2 items-center py-1.5 px-1 border-b border-slate-600/70 text-[10px] leading-snug last:border-b-0">
+    <span class="shrink-0 text-center font-bold ${pass ? "text-emerald-400" : "text-red-500"}" aria-hidden="true">${pass ? "✓" : "✗"}</span>
+    <span class="min-w-0 break-words text-slate-200 font-sans font-medium">${esc}</span>
+    <span class="shrink-0 font-mono text-slate-400 text-right tabular-nums whitespace-nowrap">${right}</span>
+  </div>`;
+}
+
 function runDeclinationTest() {
   let htmlOut = "";
 
-  htmlOut =
-    "<b class='text-emerald-400 font-bold text-xs'>NATIONAL LANDSAR TEST SUITE:</b><br>";
+  htmlOut = `<div class="text-emerald-400 font-bold text-xs font-sans mb-1 border-b border-slate-600 pb-1">NATIONAL LANDSAR TEST SUITE (declination)</div>
+    <div class="rounded-md border border-slate-600/80 bg-slate-900/30">`;
 
   const testMatrix = [
     // Format: [Input, Label, ExpectedDec, RegionSubstring?, expectSwap?]
@@ -1704,15 +1727,10 @@ function runDeclinationTest() {
       info = `${decData.dec}°E (${decData.region})`;
     }
 
-    htmlOut += `
-            <div class="flex justify-between text-[9px] border-b border-slate-700 py-1">
-                <span class="${pass ? "text-emerald-400" : "text-red-500"} font-bold">
-                    ${pass ? "✓" : "✗"} ${label}
-                </span>
-                <span class="font-mono text-slate-400">${info}</span>
-            </div>`;
+    htmlOut += integrityTestRow(pass, label, info);
   });
 
+  htmlOut += "</div>";
   return htmlOut;
 }
 
@@ -1720,8 +1738,7 @@ function runUnitTests() {
   const out = document.getElementById("coordExample");
   if (!out) return;
 
-  out.innerHTML =
-    "<b class='text-emerald-400 font-bold'>INTEGRITY MATRIX (parser + geofence):</b><br>";
+  let matrixBody = "";
 
   /**
    * Test Case Format: [Input String, Label, ExpectedLat, ExpectedLon, ExpectedSwap, ShouldBeInNZ]
@@ -1856,15 +1873,10 @@ function runUnitTests() {
       pass = swapPass && geofencePass && mathPass;
     }
 
-    out.innerHTML += `
-            <div class="flex justify-between text-[9px] border-b border-slate-700 py-1">
-                <span class="${pass ? "text-emerald-400" : "text-red-500"} font-bold">
-                    ${pass ? "✓" : "✗"} ${label}
-                </span>
-                <span class="font-mono text-slate-400">
-                    ${res ? res.lat.toFixed(2) : "ERR"}${oobStatus}
-                </span>
-            </div>`;
+    const valueCol = res
+      ? `${res.lat.toFixed(2)}, ${res.lon.toFixed(2)}${oobStatus}`
+      : `ERR${oobStatus}`;
+    matrixBody += integrityTestRow(pass, label, valueCol);
   });
 
   // --- RESTORED: MATH ROUND-TRIP INTEGRITY ---
@@ -1876,12 +1888,16 @@ function runUnitTests() {
     Math.abs(fromGrid.lat - rtLat) < 0.00001 &&
     Math.abs(fromGrid.lon - rtLon) < 0.00001;
 
-  out.innerHTML += `
-        <div class="mt-2 p-2 bg-slate-900 rounded border ${rtPass ? "border-emerald-900" : "border-red-900"}">
-            <div class="text-[9px] font-bold ${rtPass ? "text-emerald-500" : "text-red-500"}">
-                ROUND-TRIP: ${rtPass ? "VERIFIED (<1m Drift)" : "FAILED"}
-            </div>
-        </div>`;
-
-  out.innerHTML += runDeclinationTest();
+  out.innerHTML = `<div class="w-full max-w-full space-y-3 text-left font-mono">
+    <div>
+      <div class="text-emerald-400 font-bold text-xs font-sans mb-1 border-b border-slate-600 pb-1">INTEGRITY MATRIX (parser + geofence)</div>
+      <div class="rounded-md border border-slate-600/80 bg-slate-900/30">${matrixBody}</div>
+    </div>
+    <div class="p-2 rounded-md border font-sans ${rtPass ? "border-emerald-800/80 bg-emerald-950/20" : "border-red-800/80 bg-red-950/20"}">
+      <div class="text-[10px] font-bold ${rtPass ? "text-emerald-400" : "text-red-400"}">
+        ROUND-TRIP NZTM: ${rtPass ? "VERIFIED (&lt;1 m drift)" : "FAILED"}
+      </div>
+    </div>
+    <div>${runDeclinationTest()}</div>
+  </div>`;
 }

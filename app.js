@@ -8,14 +8,14 @@
  * Coordinate systems handled:
  *   - NZTM2000 (Easting/Northing) - New Zealand Transverse Mercator
  *   - DDD     - Decimal degrees (e.g. -43.54, 172.64)
- *   - DMS     - Degrees, minutes, seconds
+ *   - DMS     - Degrees, minutes, seconds (with ° ' " or space-separated e.g. S43 32 24, E172 38 24)
  *   - DDM     - Degrees, decimal minutes (N/S/E/W before or after the numeric part)
  *
  * Dependencies: none. Expects DOM elements (combinedInput, genBtn, reportContent, etc.).
  */
 
 /** User-visible release label (Index.html help/header placeholders via data-app-version). */
-const APP_VERSION_LABEL = "v1.2.1";
+const APP_VERSION_LABEL = "v1.2.3";
 const ALT_CACHE_KEY = "arc_alt_cache";
 const HISTORY_KEY = "arc_history_v2";
 const HISTORY_MAX = 10;
@@ -907,6 +907,23 @@ function flexibleParse(input) {
         String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s*(?:${DEG}|:|\s)\s*(${iLAT})\s*(?:${MIN_PRIME}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*"?\.?\s*(${NS})?`,
       "i",
     );
+
+    // Space-only DMS (no ° ' "): S43 32 24, E172 38 24 or S43 32 24 E172 38 24 or S43 32 24E172 38 24
+    const betweenSpaceDmsLatLon =
+      String.raw`(?:\s*,\s*|\s+|(?<=\d)(?=[EWew])|(?<=[NSns])(?=\d))`;
+    const betweenSpaceDmsLonLat =
+      String.raw`(?:\s*,\s*|\s+|(?<=\d)(?=[NSns])|(?<=[EWew])(?=\d))`;
+    const dmsSpaceFwd = new RegExp(
+      String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s+(${iLAT})\s+(${iLAT}(?:\.\d+)?)\s*(${NS})?\s*${betweenSpaceDmsLatLon}\s*` +
+        String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s+(${iLAT})\s+(${iLAT}(?:\.\d+)?)\s*(${EW})?`,
+      "i",
+    );
+    const dmsSpaceRev = new RegExp(
+      String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s+(${iLAT})\s+(${iLAT}(?:\.\d+)?)\s*(${EW})?\s*${betweenSpaceDmsLonLat}\s*` +
+        String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s+(${iLAT})\s+(${iLAT}(?:\.\d+)?)\s*(${NS})?`,
+      "i",
+    );
+
     // Trailing \\b after each number stops "175.2" from matching as "17" + "5.2".
     // Do not put \\b before optional minus or southern latitudes break.
     const reverseDddPair = new RegExp(
@@ -918,6 +935,37 @@ function flexibleParse(input) {
 
     // --- 4. EXECUTE & EXTRACT ---
     let m;
+
+    // Space-only DMS before DDM — otherwise "S43 32 24, E172…" matches DDM from "32 24," (wrong lat/lon).
+    // Lon-first must be tried first when input starts with E/W or a 3-digit degree (e.g. E172… / 172 38 24 S43…);
+    // otherwise dmsSpaceFwd would read "17" from "172" and corrupt lat/lon.
+    const _t = input.trim();
+    const preferSpaceDmsLonFirst =
+      /^[EWew]/.test(_t) || /^\d{3}(?:\s|,)/.test(_t);
+
+    if (preferSpaceDmsLonFirst) {
+      if ((m = input.match(dmsSpaceRev))) {
+        const lon = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+        const lat = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+        return { lat, lon, swapped: true, coords: m[0] };
+      }
+      if ((m = input.match(dmsSpaceFwd))) {
+        const lat = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+        const lon = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+        return { lat, lon, swapped: false, coords: m[0] };
+      }
+    } else {
+      if ((m = input.match(dmsSpaceFwd))) {
+        const lat = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+        const lon = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+        return { lat, lon, swapped: false, coords: m[0] };
+      }
+      if ((m = input.match(dmsSpaceRev))) {
+        const lon = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+        const lat = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+        return { lat, lon, swapped: true, coords: m[0] };
+      }
+    }
 
     // CASE: DDM FORWARD (lat then lon)
     if ((m = input.match(ddmPair))) {
@@ -1046,7 +1094,7 @@ async function processCoordinates(historyEntry) {
   const parseRes = flexibleParse(document.getElementById('combinedInput').value);
 
   if (!parseRes) {
-    alert("❌ ERROR: Could not detect valid coordinates.\n\nAccepted formats:\n- NZTM (e.g. 1571000 5178500)\n- DDD (e.g. -43.54, 172.64)\n- DDM (e.g. S43° 32.4', E172° 38.4' or 42° 57.106'S 171° 23.237'E)\n- DMS: S43°32'24\", E172°38'24\"");
+    alert("❌ ERROR: Could not detect valid coordinates.\n\nAccepted formats:\n- NZTM (e.g. 1571000 5178500)\n- DDD (e.g. -43.54, 172.64)\n- DDM (e.g. S43° 32.4', E172° 38.4' or 42° 57.106'S 171° 23.237'E)\n- DMS: S43°32'24\", E172°38'24\" or spaces only e.g. S43 32 24, E172 38 24 (comma or spaces between lat/lon)");
     return;
   }
 
@@ -1675,26 +1723,23 @@ function handleLogoClick() {
 // you ensure the tool is smart enough to fix common errors
 // but transparent enough that the user double-checks the source data.
 // =============================================================================
-/** One row for integrity / declination test output (grid: status | label | value). */
-function integrityTestRow(pass, label, rightCol) {
-  const esc =
-    typeof label === "string"
-      ? label
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-      : "";
-  const right =
-    typeof rightCol === "string"
-      ? rightCol
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")
-      : "";
-  return `<div class="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-x-2 items-center py-1.5 px-1 border-b border-slate-600/70 text-[10px] leading-snug last:border-b-0">
-    <span class="shrink-0 text-center font-bold ${pass ? "text-emerald-400" : "text-red-500"}" aria-hidden="true">${pass ? "✓" : "✗"}</span>
-    <span class="min-w-0 break-words text-slate-200 font-sans font-medium">${esc}</span>
-    <span class="shrink-0 font-mono text-slate-400 text-right tabular-nums whitespace-nowrap">${right}</span>
+/** One row for integrity / declination test output (grid: status | label + input | value). */
+function integrityTestRow(pass, label, rightCol, coordInput) {
+  const labelH = typeof label === "string" ? escapeHtml(label) : "";
+  const rightH = typeof rightCol === "string" ? escapeHtml(rightCol) : "";
+  const inputRaw =
+    coordInput != null && coordInput !== "" ? String(coordInput) : "";
+  const inputH = inputRaw ? escapeHtml(inputRaw) : "";
+  const inputBlock = inputH
+    ? `<div class="text-[9px] text-slate-500 font-mono font-normal break-words whitespace-pre-wrap mt-0.5 max-h-28 overflow-y-auto leading-snug border-l border-slate-600/50 pl-1.5" title="${escapeHtml(inputRaw)}">${inputH}</div>`
+    : "";
+  return `<div class="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-x-2 items-start py-1.5 px-1 border-b border-slate-600/70 text-[10px] leading-snug last:border-b-0">
+    <span class="shrink-0 text-center font-bold ${pass ? "text-emerald-400" : "text-red-500"} pt-0.5" aria-hidden="true">${pass ? "✓" : "✗"}</span>
+    <div class="min-w-0">
+      <div class="text-slate-200 font-sans font-medium">${labelH}</div>
+      ${inputBlock}
+    </div>
+    <span class="shrink-0 font-mono text-slate-400 text-right tabular-nums whitespace-nowrap pt-0.5">${rightH}</span>
   </div>`;
 }
 
@@ -1727,7 +1772,7 @@ function runDeclinationTest() {
       info = `${decData.dec}°E (${decData.region})`;
     }
 
-    htmlOut += integrityTestRow(pass, label, info);
+    htmlOut += integrityTestRow(pass, label, info, input);
   });
 
   htmlOut += "</div>";
@@ -1749,14 +1794,31 @@ function runUnitTests() {
     // --- Bounds testing
     ["1571000 5178500", "NZTM Clean", -43.5431, 172.6421, false, true],
     ["5178500,,,1571000", "NZTM Swapped", -43.5431, 172.6421, true, true],
-    [
-      "S43° 32.5', E172° 38.5'",
-      "DDM Canterbury",
-      -43.541,
-      172.641,
-      false,
-      true,
-    ],
+    ["S43° 32.5', E172° 38.5'","DDM Canterbury", -43.541, 172.641,false, true,],
+
+    ["S43° 32.5', 172° 38.5 E","DDM Canterbury bad punctuation", -43.541, 172.641,false, true,],
+    ["s43° 32.5', e172 38.5'E","DDM Canterbury bad punctuation 2", -43.541, 172.641,false, true,],
+    ["s43 32.5', e172° 38.5'","DDM Canterbury bad punctuation 3", -43.541, 172.641,false, true,],
+    ["s43° 32.5, e172° 38.5'","DDM Canterbury bad punctuation 4", -43.541, 172.641,false, true,],
+    ["s43 32.5S, e 172° 38.5'E","DDM Canterbury spaces only no comma", -43.541, 172.641,false, true,],
+    ["s43° 32.5', e 172 38.5","DDM Canterbury spaces lon-first", -43.541, 172.641,false, true,],
+    ["s43° 32.5,  e 172° 38.5","DDM Canterbury spaces lon-first no E prefix", -43.541, 172.641,false, true,],
+  
+
+    ["43° 32.5'S, 172° 38.5'E","DDM Canterbury hemi end", -43.541, 172.641,false, true,],
+    ["43° 32.5'S, 172° 38.5 E","DDM Canterbury hemi end bad punctuation", -43.541, 172.641,false, true,],
+    ["43° 32.5'S, 172 38.5'E","DDM Canterbury hemi end bad punctuation 2", -43.541, 172.641,false, true,],
+    ["43 32.5'S, 172° 38.5'E","DDM Canterbury hemi end bad punctuation 3", -43.541, 172.641,false, true,],
+    ["43° 32.5S, 172° 38.5'E","DDM Canterbury hemi end bad punctuation 4", -43.541, 172.641,false, true,],
+    ["43 32.5S, 172° 38.5'E","DDM Canterbury hemi end spaces only no comma", -43.541, 172.641,false, true,],
+    ["43° 32.5'S, 172 38.5E","DDM Canterbury hemi end spaces lon-first", -43.541, 172.641,false, true,],
+    ["43° 32.5S, 172° 38.5E","DDM Canterbury hemi end spaces lon-first no E prefix", -43.541, 172.641,false, true,],
+    ["42° 57.106'S 171° 23.237'E", "DDM Canterbury hemi at end", -42.951, 171.387, false, true, ],
+    ["42° 57.106'S 171 23.237E", "DDM Canterbury hemi at end bad punctuation", -42.951, 171.387, false, true, ],
+    ["42 57.106S 171 23.237E", "DDM Canterbury hemi at end bad punctuation 2", -42.951, 171.387, false, true, ],
+    ["42 57.106'S 171 23.237E", "DDM Canterbury hemi at end bad punctuation 3", -42.951, 171.387, false, true, ],
+    ["42 57.106S 171 23.237E", "DDM Canterbury hemi at end bad punctuation 3", -42.951, 171.387, false, true,],
+
     // reverse-DDD matches first → swapped true for symmetric null island
     ["0.00, 0.00", "DDD Out-of-Bounds", 0.0, 0.0, true, false],
     ["-37.8, 175.2", "DDD Waikato", -37.8, 175.2, false, true],
@@ -1764,7 +1826,25 @@ function runUnitTests() {
     ["1571000,5178500", "NZTM no letters", -43.54, 172.64, false, true],
     ["E1571000,N5178500", "NZTM with letters", -43.54, 172.64, false, true],
     ["-43.54, 172.64", "DDD", -43.54, 172.64, false, true],
+
     ["S43°32'24, E172°38'24", "DMS", -43.54, 172.64, false, true],
+    ["S43 32'24, E172°38 24", "DMS bad punctuation", -43.54, 172.64, false, true],
+    ["S43°32'24, E172 38'24", "DMS bad punctuation 2", -43.54, 172.64, false, true],
+    ["S43 32'24, E172°38'24", "DMS bad punctuation 3", -43.54, 172.64, false, true],
+    ["S43 32 24, E172 38 24", "DMS bad punctuation 4", -43.54, 172.64, false, true],
+    ["S43 32 24 E172 38 24", "DMS spaces only no comma", -43.54, 172.64, false, true],
+    ["E172 38 24 S43 32 24", "DMS spaces lon-first", -43.54, 172.64, true, true],
+    ["172 38 24 S43 32 24", "DMS spaces lon-first no E prefix", -43.54, 172.64, true, true],
+
+    ["43°32'24S, E172°38'24E", "DMS hemi end", -43.54, 172.64, false, true],
+    ["43 32'24S, E172°38 24E", "DMS hemi end bad punctuation", -43.54, 172.64, false, true],
+    ["43°32'24S, E172 38'24E", "DMS hemi end bad punctuation 2", -43.54, 172.64, false, true],
+    ["43 32'24S, E172°38'24E", "DMS hemi end bad punctuation 3", -43.54, 172.64, false, true],
+    ["43 32 24S, E172 38 24E", "DMS hemi end bad punctuation 4", -43.54, 172.64, false, true],
+    ["43 32 24S E172 38 24E", "DMS hemi end spaces only no comma", -43.54, 172.64, false, true],
+    ["172 38 24E 43 32 24S", "DMS hemi end spaces lon-first", -43.54, 172.64, true, true],
+    ["172 38 24E 43 32 24S", "DMS hemi end spaces lon-first no E prefix", -43.54, 172.64, true, true],
+
     [
       "Some random text here... Location 1 (DDD): -43.54, 172.64. Then we have a DMS ",
       "DDD",
@@ -1876,7 +1956,7 @@ function runUnitTests() {
     const valueCol = res
       ? `${res.lat.toFixed(2)}, ${res.lon.toFixed(2)}${oobStatus}`
       : `ERR${oobStatus}`;
-    matrixBody += integrityTestRow(pass, label, valueCol);
+    matrixBody += integrityTestRow(pass, label, valueCol, input);
   });
 
   // --- RESTORED: MATH ROUND-TRIP INTEGRITY ---

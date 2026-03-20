@@ -9,7 +9,7 @@
  *   - NZTM2000 (Easting/Northing) - New Zealand Transverse Mercator
  *   - DDD     - Decimal degrees (e.g. -43.54, 172.64)
  *   - DMS     - Degrees, minutes, seconds
- *   - DDM     - Degrees, decimal minutes
+ *   - DDM     - Degrees, decimal minutes (N/S/E/W before or after the numeric part)
  *
  * Dependencies: none. Expects DOM elements (combinedInput, genBtn, reportContent, etc.).
  */
@@ -734,7 +734,7 @@ function getTopo50Sheet(e, n) {
 function categorizeCoordinates(inputText) {
   // Regex with Named Capturing Groups for each format
   const regex =
-    /(?<DDD>-?\d{1,3}\.\d+,\s*-?[\d\.]+)|(?<DMS>[NSEW]\d{1,3}°\d{1,2}'\d{1,2},?\s*[NSEW]\d{1,3}°\d{1,2}'\d{1,2})|(?<DDM>[NSEW]\d{1,3}\s\d{1,2}\.\d+[NSEW]?,\s*[NSEW]\d{1,3}\s\d{1,2}\.\d+)|(?<NZTM>\b(?:E?\s*)\d{7},\s*(?:N?\s*)\d{7}\b)/gi;
+    /(?<DDD>-?\d{1,3}\.\d+,\s*-?[\d\.]+)|(?<DMS>[NSEW]\d{1,3}°\d{1,2}'\d{1,2},?\s*[NSEW]\d{1,3}°\d{1,2}'\d{1,2})|(?<DDM>(?:[NSEW]\d{1,3}\s\d{1,2}\.\d+[NSEW]?,\s*[NSEW]\d{1,3}\s\d{1,2}\.\d+)|(?:\d{1,2}\s*[°º˚]\s*\d+(?:\.\d+)?\s*['′']?\s*[NS]\s*[\s,]*\d{1,3}\s*[°º˚]\s*\d+(?:\.\d+)?\s*['′']?\s*[EW]))|(?<NZTM>\b(?:E?\s*)\d{7},\s*(?:N?\s*)\d{7}\b)/gi;
 
   const results = [];
   let match;
@@ -859,56 +859,89 @@ function flexibleParse(input) {
         }
     }
 
-    // --- 2. REGEX PATTERN FRAGMENTS ---
-    // Groups: 1:Sign, 2:Degrees, 3:Minutes(Decimal), 4:Sign
-    const latDDM = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
-    const lonDDM = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
+    // --- 2. REGEX PATTERN FRAGMENTS (DDM / DMS pairs) ---
+    // Hemisphere may be before the numeric (S42°…) or after minutes/seconds (42°30'S).
+    // Between lat and lon: comma, whitespace, or nothing when hemispheres abut (…'S171°…).
+    const DEG = "°|º|˚";
+    const MIN_PRIME = "'|′|’";
+    /** Prefer trailing hemisphere when both given (e.g. typo); usually only one is present. */
+    function ddmHemi(suffix, prefix) {
+      const a = suffix != null ? String(suffix).trim() : "";
+      const b = prefix != null ? String(prefix).trim() : "";
+      return a || b || "";
+    }
+    // Must be real \d in the RegExp source — "\d" in a string is just "d" (invalid escape).
+    const iLAT = String.raw`\d{1,2}`;
+    const iLON = String.raw`\d{1,3}`;
+    const NS = "[NSns]";
+    const EW = "[EWew]";
+    const NSPLUS = "[NSns+-]";
+    const EWPLUS = "[EWew+-]";
+    const betweenLatLon =
+      String.raw`(?:\s*,\s*|\s+|(?<=${NS})\s*(?=${iLON}\s*(?:${DEG})|${iLON}(?:${DEG})))`;
+    const betweenLonLat =
+      String.raw`(?:\s*,\s*|\s+|(?<=${NS})\s*(?=${iLAT}\s*(?:${DEG})|${iLAT}(?:${DEG})))`;
 
-    // Groups: 1:Sign, 2:Deg, 3:Min, 4:Sec(Decimal), 5:Sign
-    const latDMS = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
-    const lonDMS = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
 
-    //Constructing pairs.
-    const ddmPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([EW+-]?)(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
-    // Require E/W on the lon-first half so we never treat "43 32…" inside "S43 32…" as DDM-rev.
-    const ddmRev =
-        /([EW])\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*(?:,|\s)\s*([NS+-]?)(\d{1,2})(?:°|:|\s)\s*(\d{1,2}(?:\.\d+)?)(?:'|\s)?\s*/i;
+    // Forward DDM: lat (1–2°) then lon (up to 3°). Groups: latPre, latD, latM, latSuf, lonPre, lonD, lonM, lonSuf
+    const ddmPair = new RegExp(
+      String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s*(?:${DEG}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*(?:${MIN_PRIME})?\s*(${NS})?\s*${betweenLatLon}\s*` +
+        String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s*(?:${DEG}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*(?:${MIN_PRIME})?\s*(${EW})?`,
+      "i",
+    );
+    // Lon-first DDM: lon then lat (leading E/W not required if suffix present).
+    const ddmRev = new RegExp(
+      String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s*(?:${DEG}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*(?:${MIN_PRIME})?\s*(${EW})?\s*${betweenLonLat}\s*` +
+        String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s*(?:${DEG}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*(?:${MIN_PRIME})?\s*(${NS})?`,
+      "i",
+    );
 
-    const dmsPair = /([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
-     const dmsRev = /([EW+-]?)\s*(\d{1,3})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*(?:,|\s)\s*([NS+-]?)\s*(\d{1,2})(?:°|:|\s)\s*(\d{1,2})(?:'|:|\s)\s*(\d{1,2}(?:\.\d+)?)\"?\s*/i;
+    // DMS pairs: optional hemispheres after seconds as well as before degrees.
+    const dmsPair = new RegExp(
+      String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s*(?:${DEG}|:|\s)\s*(${iLAT})\s*(?:${MIN_PRIME}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*"?\.?\s*(${NS})?\s*${betweenLatLon}\s*` +
+        String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s*(?:${DEG}|:|\s)\s*(${iLAT})\s*(?:${MIN_PRIME}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*"?\.?\s*(${EW})?`,
+      "i",
+    );
+    const dmsRev = new RegExp(
+      String.raw`(?:(${EWPLUS})\s*)?(${iLON})\s*(?:${DEG}|:|\s)\s*(${iLAT})\s*(?:${MIN_PRIME}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*"?\.?\s*(${EW})?\s*${betweenLonLat}\s*` +
+        String.raw`(?:(${NSPLUS})\s*)?(${iLAT})\s*(?:${DEG}|:|\s)\s*(${iLAT})\s*(?:${MIN_PRIME}|:|\s)\s*(${iLAT}(?:\.\d+)?)\s*"?\.?\s*(${NS})?`,
+      "i",
+    );
     // Trailing \\b after each number stops "175.2" from matching as "17" + "5.2".
     // Do not put \\b before optional minus or southern latitudes break.
-    const reverseDddPair =
-        /(-?\d{1,3}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?\d{1,2}(?:\.\d+)?)\b/;
-    const dddPair =
-        /(-?\d{1,2}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?\d{1,3}(?:\.\d+)?)\b/;
+    const reverseDddPair = new RegExp(
+      String.raw`(-?${iLON}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?${iLAT}(?:\.\d+)?)\b`,
+    );
+    const dddPair = new RegExp(
+      String.raw`(-?${iLAT}(?:\.\d+)?)\b\s*[,\s/|;]+\s*(-?${iLON}(?:\.\d+)?)\b`,
+    );
 
     // --- 4. EXECUTE & EXTRACT ---
     let m;
 
-    // CASE: DDM FORWARD
+    // CASE: DDM FORWARD (lat then lon)
     if ((m = input.match(ddmPair))) {
-        const lat = calcDDM(m[2], m[3], m[1]);
-        const lon = calcDDM(m[5], m[6], m[4]);
-        return { lat, lon, swapped: false, coords: m[0] };
+      const lat = calcDDM(m[2], m[3], ddmHemi(m[4], m[1]));
+      const lon = calcDDM(m[6], m[7], ddmHemi(m[8], m[5]));
+      return { lat, lon, swapped: false, coords: m[0] };
     }
-    // CASE: DDM REVERSE
+    // CASE: DDM REVERSE (lon then lat)
     if ((m = input.match(ddmRev))) {
-        const lon = calcDDM(m[2], m[3], m[1]);
-        const lat = calcDDM(m[5], m[6], m[4]);
-        return { lat, lon, swapped: true, coords: lat + ',' + lon  };
+      const lon = calcDDM(m[2], m[3], ddmHemi(m[4], m[1]));
+      const lat = calcDDM(m[6], m[7], ddmHemi(m[8], m[5]));
+      return { lat, lon, swapped: true, coords: lat + "," + lon };
     }
     // CASE: DMS FORWARD
     if ((m = input.match(dmsPair))) {
-        const lat = calcDMS(m[2], m[3], m[4], m[1]);
-        const lon = calcDMS(m[6], m[7], m[8], m[5]);
-        return { lat, lon, swapped: false, coords: m[0]  };
+      const lat = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+      const lon = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+      return { lat, lon, swapped: false, coords: m[0] };
     }
     // CASE: DMS REVERSE
     if ((m = input.match(dmsRev))) {
-        const lon = calcDMS(m[2], m[3], m[4], m[1]);
-        const lat = calcDMS(m[6], m[7], m[8], m[5]);
-        return { lat, lon, swapped: true, coords: lat + ',' + lon };
+      const lon = calcDMS(m[2], m[3], m[4], ddmHemi(m[5], m[1]));
+      const lat = calcDMS(m[7], m[8], m[9], ddmHemi(m[10], m[6]));
+      return { lat, lon, swapped: true, coords: lat + "," + lon };
     }
 
     // CASE: DDD important keep these 2 if in sequence orderered
@@ -1013,7 +1046,7 @@ async function processCoordinates(historyEntry) {
   const parseRes = flexibleParse(document.getElementById('combinedInput').value);
 
   if (!parseRes) {
-    alert("❌ ERROR: Could not detect valid coordinates.\n\nAccepted formats:\n- NZTM (e.g. 1571000 5178500)\n- DDD (e.g. -43.54, 172.64)\n- DDM (e.g. S43° 32.4', E172° 38.4') - DMS: S43°32'24\", E172°38'24\"");
+    alert("❌ ERROR: Could not detect valid coordinates.\n\nAccepted formats:\n- NZTM (e.g. 1571000 5178500)\n- DDD (e.g. -43.54, 172.64)\n- DDM (e.g. S43° 32.4', E172° 38.4' or 42° 57.106'S 171° 23.237'E)\n- DMS: S43°32'24\", E172°38'24\"");
     return;
   }
 
@@ -1773,6 +1806,22 @@ function runUnitTests() {
     // DDM - SYMBOLS (The specific ones you noted)
     ["S43° 32.4', E172° 38.4'", "DDM with Symbols", -43.54, 172.64, false, true],
     ["S43 32.4, E172 38.4", "DDM with Spaces", -43.54, 172.64, false, true],
+    [
+      "42° 57.106'S 171° 23.237'E",
+      "DDM suffix NSEW, no comma (field paste)",
+      -42.952,
+      171.387,
+      false,
+      true,
+    ],
+    [
+      "42°57.106'S171°23.237'E",
+      "DDM tight spacing abutted hemis",
+      -42.952,
+      171.387,
+      false,
+      true,
+    ],
     
     // NZTM - TEXT NOISE
     ["The target is at 1571000 5178500 in the bush", "NZTM in Text", -43.54, 172.64, false, true],
